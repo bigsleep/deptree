@@ -5,14 +5,11 @@ module Control.Eff.Kvs
 , setWithTtl
 , delete
 , Kvs(..)
-, Serializable
-, serialize
-, deserialize
 ) where
 
 import Control.Eff (Eff, Member, inj, send)
+import Data.Serializable (Serializable)
 import Data.Typeable (Typeable)
-import qualified Data.ByteString as B (ByteString)
 
 data Kvs k a =
     forall v. Serializable v => Get k (Maybe v -> a) |
@@ -39,7 +36,3 @@ setWithTtl k v ttl = send $ inj . SetWithTtl k v ttl
 
 delete :: (Typeable k, Member (Kvs k) r) => k -> Eff r Bool
 delete k = send $ inj . Delete k
-
-class Serializable a where
-    serialize :: a -> B.ByteString
-    deserialize :: B.ByteString -> Maybe a
