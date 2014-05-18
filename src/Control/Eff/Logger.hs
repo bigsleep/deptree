@@ -7,6 +7,8 @@ module Control.Eff.Logger
 , logWarn
 , logError
 , runLoggerStdIO
+, Logger(..)
+, LogLevel(..)
 ) where
 
 import Control.Eff ((:>), VE(..), Eff, Member, SetMember, admin, handleRelay, inj, send)
@@ -22,7 +24,7 @@ data Logger s a = Logger LogLevel s a deriving (Typeable, Functor)
 log :: (Typeable s, Member (Logger s) r) => LogLevel -> s -> Eff r ()
 log l s = send $ \f -> inj $ Logger l s $ f ()
 
-logDebug, logNotice, logInfo, logWarn, logError :: (Typeable s, Member (Logger s) r) => s -> Eff r ()
+logDebug, logNotice, logInfo, logWarn, logError :: (Member (Logger String) r) => String -> Eff r ()
 logDebug = log DEBUG
 logNotice = log NOTICE
 logInfo = log INFO
