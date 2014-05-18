@@ -12,9 +12,9 @@ import Data.Serializable (Serializable)
 import Data.Typeable (Typeable)
 
 data Kvs k a =
-    forall v. Serializable v => Get k (Maybe v -> a) |
-    forall v. Serializable v => Set k v (Bool -> a) |
-    forall v. Serializable v => SetWithTtl k v Integer (Bool -> a) |
+    forall v. (Typeable v, Serializable v) => Get k (Maybe v -> a) |
+    forall v. (Typeable v, Serializable v) => Set k v (Bool -> a) |
+    forall v. (Typeable v, Serializable v) => SetWithTtl k v Integer (Bool -> a) |
     Delete k (Bool -> a)
     deriving (Typeable)
 
