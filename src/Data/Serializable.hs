@@ -4,8 +4,8 @@ module Data.Serializable
 , deserialize
 ) where
 
-import qualified Data.ByteString as B (ByteString)
+import qualified Data.ByteString.Lazy as L (ByteString)
 
 class Serializable a where
-    serialize :: a -> B.ByteString
-    deserialize :: B.ByteString -> Maybe a
+    serialize :: a -> L.ByteString
+    deserialize :: L.ByteString -> Maybe a
