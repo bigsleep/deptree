@@ -22,3 +22,11 @@ executable oauth2-experiment
   build-depends:       base >=4.7 && <4.8, containers, bytestring, http-types, extensible-effects, wai, hedis, th-printf, random
   hs-source-dirs:      src
   default-language:    Haskell2010
+
+test-suite spec
+    hs-source-dirs:     test, src
+    type:               exitcode-stdio-1.0
+    main-is:            Spec.hs
+    build-depends:      base >=4.7 && <4.8, containers, bytestring, http-types, extensible-effects, wai, hedis, th-printf, random, hspec, QuickCheck
+    default-language:   Haskell2010
+
