@@ -1,23 +1,31 @@
-{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes #-}
+{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes, DeriveDataTypeable, StandaloneDeriving #-}
 module Application.Run.Session
 ( runSession
-, genSessionId
 ) where
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
+import Control.Eff.Reader.Strict (Reader, ask)
 import Control.Eff.Lift (Lift, lift)
 import Control.Eff.Exception (Exc, throwExc)
 import Control.Eff.Session (Session(..))
 import Control.Eff.Logger (Logger, logDebug, logInfo, logError)
 import qualified Control.Eff.Kvs as Kvs (Kvs, get, setWithTtl, delete)
 import Data.Serializable (serialize)
+import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString, append)
 import qualified Data.ByteString.Char8 as B (pack)
+import qualified Data.UnixTime as T (UnixTime, formatUnixTime)
 import System.Random (getStdGen, randomRs)
 import Text.Printf.TH (s)
 
+deriving instance Typeable T.UnixTime
 
-runSession :: (Member (Exc String) r, Member (Logger String) r, Member (Kvs.Kvs B.ByteString) r, Member (Lift IO) r, SetMember Lift (Lift IO) r)
+runSession :: ( Member (Exc String) r
+              , Member (Logger String) r
+              , Member (Kvs.Kvs B.ByteString) r
+              , Member (Reader T.UnixTime) r
+              , SetMember Lift (Lift IO) r
+              )
            => Integer -> Eff (Session :> r) a -> Eff r a
 runSession ttl = loop . admin
     where loop (Val a) = return a
@@ -25,8 +33,10 @@ runSession ttl = loop . admin
           loop (E u) = handleRelay u loop handle
 
           handle (StartSession v c) = do
-            randomStr <- lift $ genSessionId 40
-            let ssid = "SSID" `B.append` randomStr
+            t <- ask
+            dateStr <- lift $ T.formatUnixTime "%Y%M%D" t
+            randomStr <- lift $ genRandomByteString 40
+            let ssid = "SSID" `B.append` dateStr `B.append` randomStr
             r <- Kvs.setWithTtl ssid v ttl
             if r then do
                     logDebug $ [s|startSession success. ssid=%s info=%s|] ssid (serialize v)
@@ -55,7 +65,7 @@ runSession ttl = loop . admin
                     throwExc ("error" :: String)
 
 
-genSessionId :: Int -> IO B.ByteString
-genSessionId len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< getStdGen
+genRandomByteString :: Int -> IO B.ByteString
+genRandomByteString len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< getStdGen
     where chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
 
