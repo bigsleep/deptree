@@ -40,18 +40,18 @@ runKvsRedis cinfo eff = do
                     loop cn . c $ False
 
           handle cn (Kvs.SetWithTtl k v ttl c) = handleRedis cn (Redis.setex k ttl . L.toStrict . serialize $ v) handleResult
-            where handleResult (Right x) = do
-                    logDebug $ [s|redis setex success. key=%s ttl=%d value=%s status=%s|] k ttl (serialize v) (show x)
-                    loop cn . c $ (x == Redis.Ok)
+            where handleResult (Right Redis.Ok) = do
+                    logDebug $ [s|redis setex success. key=%s ttl=%d value=%s status=Ok|] k ttl (serialize v)
+                    loop cn . c $ True
 
-                  handleResult (Left x) = do
+                  handleResult x = do
                     logError $ [s|redis setex failure. key=%s ttl=%d value=%s reply=%s|] k ttl (serialize v) (show x)
                     loop cn . c $ False
 
           handle cn (Kvs.Delete k c) = handleRedis cn (Redis.del [k]) handleResult
             where handleResult (Right x) = do
                     logDebug $ [s|redis del success. key=%s deleted=%d|] k x
-                    loop cn . c $ (x == 1)
+                    loop cn . c $ True
 
                   handleResult (Left x) = do
                     logError $ [s|redis del failure. key=%s reply=%s|] k (show x)
