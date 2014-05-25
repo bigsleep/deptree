@@ -20,28 +20,28 @@ import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
 type Parameter = (B.ByteString, B.ByteString)
 
 
-routes :: Monad m => m a -> [HTTP.Method -> B.ByteString -> Maybe (m a)] -> HTTP.Method -> B.ByteString -> m a
+routes :: a -> [HTTP.Method -> B.ByteString -> Maybe a] -> HTTP.Method -> B.ByteString -> a
 routes d rs method path = fromMaybe d (msum . map (\a -> a method path) $ rs)
 
 
-get, post :: Monad m => [RoutePattern] -> m a -> HTTP.Method -> B.ByteString -> Maybe (m a)
+get, post :: [RoutePattern] -> a -> HTTP.Method -> B.ByteString -> Maybe a
 get = route HTTP.methodGet
 post = route HTTP.methodPost
 
 
-get', post' :: Monad m => [RoutePattern] -> ([Parameter] -> m a) -> HTTP.Method -> B.ByteString -> Maybe (m a)
+get', post' :: [RoutePattern] -> ([Parameter] -> a) -> HTTP.Method -> B.ByteString -> Maybe a
 get' = route' HTTP.methodGet
 post' = route' HTTP.methodPost
 
 
-route :: HTTP.Method -> [RoutePattern] -> m a -> HTTP.Method -> B.ByteString -> Maybe (m a)
+route :: HTTP.Method -> [RoutePattern] -> a -> HTTP.Method -> B.ByteString -> Maybe a
 route method pattern app requestMethod requestPath =
     if requestMethod == method
        then matchRoute pattern requestPath >> return app
        else Nothing
 
 
-route' :: HTTP.Method -> [RoutePattern] -> ([Parameter] -> m a) -> HTTP.Method -> B.ByteString -> Maybe (m a)
+route' :: HTTP.Method -> [RoutePattern] -> ([Parameter] -> a) -> HTTP.Method -> B.ByteString -> Maybe a
 route' method pattern app requestMethod requestPath =
     if requestMethod == method
        then liftM app (matchRoute pattern requestPath)
