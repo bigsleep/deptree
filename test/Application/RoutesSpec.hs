@@ -26,12 +26,11 @@ routesSpec = describe "routes" $
 
 myapp :: HTTP.Method -> B.ByteString -> Maybe B.ByteString
 myapp = R.routes Nothing
-    [ R.get (p "/") (return "root")
-    , R.get (p "/news") (return "news")
-    , R.get' (p "/blog/:year/:month/:day") blog
-    , R.post (p "/user/register") (return "register")
+    [ R.get "/" (return "root")
+    , R.get "/news" (return "news")
+    , R.get' "/blog/:year/:month/:day" blog
+    , R.post "/user/register" (return "register")
     ]
-    where p = R.parseRoute
 
 blog :: [(B.ByteString, B.ByteString)] -> Maybe B.ByteString
 blog params = do

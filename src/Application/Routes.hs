@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, FlexibleInstances, MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 module Application.Routes
 ( routes
 , route
@@ -15,6 +15,7 @@ import Data.Maybe (fromMaybe)
 import qualified Data.ByteString as B (ByteString, empty)
 import qualified Data.ByteString.Char8 as B (head, split, pack)
 import qualified Data.List as L (break)
+import Data.String (IsString(..))
 import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
 
 type Parameter = (B.ByteString, B.ByteString)
@@ -78,3 +79,7 @@ routePatternFromString :: String -> RoutePattern
 routePatternFromString ":" = error "invalid route parameter pattern"
 routePatternFromString (':' : s) = RouteParameter $ B.pack s
 routePatternFromString s = RoutePath $ B.pack s
+
+
+instance IsString [RoutePattern] where
+    fromString = parseRoute
