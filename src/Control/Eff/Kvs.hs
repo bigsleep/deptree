@@ -1,38 +1,41 @@
-{-# LANGUAGE TypeOperators, FlexibleContexts, DeriveDataTypeable, ExistentialQuantification #-}
+{-# LANGUAGE TypeOperators, FlexibleContexts, DeriveDataTypeable, ExistentialQuantification, TypeFamilies #-}
 module Control.Eff.Kvs
 ( get
 , set
 , setWithTtl
 , delete
 , Kvs(..)
+, KeyType
 ) where
 
 import Control.Eff (Eff, Member, inj, send)
 import Data.Serializable (Serializable)
 import Data.Typeable (Typeable)
 
-data Kvs k a =
-    forall v. (Typeable v, Serializable v) => Get k (Maybe v -> a) |
-    forall v. (Typeable v, Serializable v) => Set k v (Bool -> a) |
-    forall v. (Typeable v, Serializable v) => SetWithTtl k v Integer (Bool -> a) |
-    Delete k (Bool -> a)
+type family KeyType kvs :: *
+
+data Kvs kvs a =
+    forall v. (Typeable v, Serializable v) => Get kvs (KeyType kvs) (Maybe v -> a) |
+    forall v. (Typeable v, Serializable v) => Set kvs (KeyType kvs) v (Bool -> a) |
+    forall v. (Typeable v, Serializable v) => SetWithTtl kvs (KeyType kvs) v Integer (Bool -> a) |
+    Delete kvs (KeyType kvs) (Bool -> a)
     deriving (Typeable)
 
-instance Functor (Kvs k) where
-    fmap f (Get k c) = Get k (f . c)
-    fmap f (Set k v c) = Set k v (f . c)
-    fmap f (SetWithTtl k v ttl c) = SetWithTtl k v ttl (f . c)
-    fmap f (Delete k c) = Delete k (f . c)
+instance Functor (Kvs kvs) where
+    fmap f (Get kvs k c) = Get kvs k (f . c)
+    fmap f (Set kvs k v c) = Set kvs k v (f . c)
+    fmap f (SetWithTtl kvs k v ttl c) = SetWithTtl kvs k v ttl (f . c)
+    fmap f (Delete kvs k c) = Delete kvs k (f . c)
 
 
-get :: (Typeable k, Typeable v, Serializable v, Member (Kvs k) r) => k -> Eff r (Maybe v)
-get k = send $ inj . Get k
+get :: (Typeable kvs, Typeable v, Serializable v, Member (Kvs kvs) r) => kvs -> KeyType kvs -> Eff r (Maybe v)
+get kvs k = send $ inj . Get kvs k
 
-set :: (Typeable k, Typeable v, Serializable v, Member (Kvs k) r) => k -> v -> Eff r Bool
-set k v = send $ inj . Set k v
+set :: (Typeable kvs, Typeable v, Serializable v, Member (Kvs kvs) r) => kvs -> KeyType kvs -> v -> Eff r Bool
+set kvs k v = send $ inj . Set kvs k v
 
-setWithTtl :: (Typeable k, Typeable v, Serializable v, Member (Kvs k) r) => k -> v -> Integer -> Eff r Bool
-setWithTtl k v ttl = send $ inj . SetWithTtl k v ttl
+setWithTtl :: (Typeable kvs, Typeable v, Serializable v, Member (Kvs kvs) r) => kvs -> KeyType kvs -> v -> Integer -> Eff r Bool
+setWithTtl kvs k v ttl = send $ inj . SetWithTtl kvs k v ttl
 
-delete :: (Typeable k, Member (Kvs k) r) => k -> Eff r Bool
-delete k = send $ inj . Delete k
+delete :: (Typeable kvs, Member (Kvs kvs) r) => kvs -> KeyType kvs -> Eff r Bool
+delete kvs k = send $ inj . Delete kvs k

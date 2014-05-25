@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeOperators, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, TypeOperators, FlexibleContexts, TypeFamilies #-}
 module Application.Run.Kvs.RedisSpec
 ( kvsRedisSpec
 ) where
@@ -6,7 +6,7 @@ module Application.Run.Kvs.RedisSpec
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Control.Eff.Lift (Lift, runLift)
 import Control.Eff.Logger (Logger, LogLevel(..), runLoggerStdIO)
-import qualified Control.Eff.Kvs as Kvs (Kvs(..), get, set, setWithTtl, delete)
+import qualified Control.Eff.Kvs as Kvs (Kvs(..), get, set, setWithTtl, delete, KeyType)
 import Control.Concurrent (threadDelay)
 import qualified Database.Redis as Redis (get, set, setex, del, ConnectInfo(..), defaultConnectInfo, PortID(..), connect, runRedis, Status(..))
 import qualified Data.ByteString as B (ByteString)
@@ -19,6 +19,9 @@ import Application.Run.Kvs.Redis (runKvsRedis)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import qualified Test.Hspec.QuickCheck as Q
 import qualified Test.QuickCheck.Property as Q
+
+
+type instance Kvs.KeyType () = B.ByteString
 
 
 kvsRedisSpec :: Spec
@@ -38,7 +41,7 @@ setSpec = do
     Q.prop "kvs-redis set" $
         \val -> Q.ioProperty $ do
             let key = "key1"
-            let code = Kvs.set key (L.pack val)
+            let code = Kvs.set () key (L.pack val)
             r <- runTest code
             con <- Redis.connect testConnectInfo
             x <- Redis.runRedis con $ Redis.get key
@@ -54,7 +57,7 @@ setWithTtlSpec = describe "kvs-redis setWithTtl" $
         let key = "key2"
         let val = "hello world"
         let ttl = 1
-        let code = Kvs.setWithTtl key (L.pack val) ttl
+        let code = Kvs.setWithTtl () key (L.pack val) ttl
         r <- runTest code
         r `shouldBe` True
         con <- Redis.connect testConnectInfo
@@ -72,7 +75,7 @@ getSpec = do
             let key = "key3"
             con <- Redis.connect testConnectInfo
             Redis.runRedis con $ Redis.set key (B.pack val)
-            let code = Kvs.get key
+            let code = Kvs.get () key
             x <- runTest code
             let message = "expected: " ++ show val ++ " result: " ++ show x
             let result = if (Just . L.pack $ val) == x
@@ -85,7 +88,7 @@ getSpec = do
             let key = "key4" :: B.ByteString
             con <- Redis.connect testConnectInfo
             Redis.runRedis con $ Redis.del [key]
-            let code = Kvs.get key
+            let code = Kvs.get () key
             x <- runTest code
             let message = "expected: Nothing result: " ++ show x
             let result = if Nothing == (x :: Maybe L.ByteString)
@@ -101,13 +104,13 @@ deleteSpec = describe "kvs-redis delete" $
         let val = "hoge"
         con <- Redis.connect testConnectInfo
         Redis.runRedis con $ Redis.set key (B.pack val)
-        let code = Kvs.delete key
+        let code = Kvs.delete () key
         r <- runTest code
         r `shouldBe` True
         x <- Redis.runRedis con $ Redis.get key
         x `shouldBe` Right Nothing
 
 
-runTest :: Eff (Kvs.Kvs B.ByteString :> Logger String :> Lift IO :> ()) a -> IO a
+runTest :: Eff (Kvs.Kvs () :> Logger String :> Lift IO :> ()) a -> IO a
 runTest = runLift . runLoggerStdIO DEBUG . runKvsRedis testConnectInfo
 
