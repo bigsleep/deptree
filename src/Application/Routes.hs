@@ -2,38 +2,59 @@
 module Application.Routes
 ( routes
 , route
+, route'
 , get
+, get'
 , post
+, post'
 , parseRoute
 ) where
 
-import Control.Eff (Eff)
 import Control.Monad (msum, when, liftM)
 import Data.Maybe (fromMaybe)
 import qualified Data.ByteString as B (ByteString, empty)
 import qualified Data.ByteString.Char8 as B (head, split, pack)
 import qualified Data.List as L (break)
 import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
-import qualified Network.Wai as W (Request, requestMethod, rawPathInfo)
 
-routes :: Eff r a -> e -> [e -> Maybe (Eff r a)] -> Eff r a
-routes d req rs = fromMaybe d (msum . map ($ req) $ rs)
+type Parameter = (B.ByteString, B.ByteString)
 
-get, post :: Adaptable app (Eff r a) => [RoutePattern] -> app -> W.Request -> Maybe (Eff r a)
+
+routes :: Monad m => m a -> [HTTP.Method -> B.ByteString -> Maybe (m a)] -> HTTP.Method -> B.ByteString -> m a
+routes d rs method path = fromMaybe d (msum . map (\a -> a method path) $ rs)
+
+
+get, post :: Monad m => [RoutePattern] -> m a -> HTTP.Method -> B.ByteString -> Maybe (m a)
 get = route HTTP.methodGet
 post = route HTTP.methodPost
 
-route :: (Adaptable app (Eff r a)) => HTTP.Method -> [RoutePattern] -> app -> W.Request -> Maybe (Eff r a)
-route method pattern app req = if W.requestMethod req == method
-                                  then liftM (adapt app) (matchRoute pattern (W.rawPathInfo req))
-                                  else Nothing
+
+get', post' :: Monad m => [RoutePattern] -> ([Parameter] -> m a) -> HTTP.Method -> B.ByteString -> Maybe (m a)
+get' = route' HTTP.methodGet
+post' = route' HTTP.methodPost
+
+
+route :: HTTP.Method -> [RoutePattern] -> m a -> HTTP.Method -> B.ByteString -> Maybe (m a)
+route method pattern app requestMethod requestPath =
+    if requestMethod == method
+       then matchRoute pattern requestPath >> return app
+       else Nothing
+
+
+route' :: HTTP.Method -> [RoutePattern] -> ([Parameter] -> m a) -> HTTP.Method -> B.ByteString -> Maybe (m a)
+route' method pattern app requestMethod requestPath =
+    if requestMethod == method
+       then liftM app (matchRoute pattern requestPath)
+       else Nothing
+
 
 data RoutePattern =
     RoutePath B.ByteString |
     RouteParameter B.ByteString
     deriving (Show, Eq)
 
-matchRoute :: [RoutePattern] -> B.ByteString -> Maybe [(B.ByteString, B.ByteString)]
+
+matchRoute :: [RoutePattern] -> B.ByteString -> Maybe [Parameter]
 matchRoute _ "" = Nothing
 matchRoute pattern url = do
     when (B.head url /= '/') Nothing
@@ -44,6 +65,7 @@ matchRoute pattern url = do
           match (RouteParameter a, b) = Just (a, b)
           emp = Just (B.empty, B.empty)
 
+
 parseRoute :: String -> [RoutePattern]
 parseRoute ('/' : s) = filter (/= RoutePath "") . split $ s
     where split a = case L.break (== '/') a of
@@ -51,16 +73,8 @@ parseRoute ('/' : s) = filter (/= RoutePath "") . split $ s
                          (h, _) -> [routePatternFromString h]
 parseRoute _ = error "invalid route pattern"
 
+
 routePatternFromString :: String -> RoutePattern
 routePatternFromString ":" = error "invalid route parameter pattern"
 routePatternFromString (':' : s) = RouteParameter $ B.pack s
 routePatternFromString s = RoutePath $ B.pack s
-
-class Adaptable a b where
-    adapt :: a -> [(B.ByteString, B.ByteString)] -> b
-
-instance Adaptable (Eff r a) (Eff r a) where
-    adapt = const
-
-instance Adaptable ([(B.ByteString, B.ByteString)] -> Eff r a) (Eff r a) where
-    adapt = id
