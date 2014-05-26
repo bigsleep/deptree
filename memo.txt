@@ -1,3 +1,33 @@
+-----------------------------------------------------------------
+20140527 Logger
+
+data Logger logger a
+
+logger型引数をつけてLoggerを複数付けられるようにする
+Application.Eff.Loggerにloggerの型を具体的に書く
+log関数などの引数も部分適用したものを定義する
+他のLoggerはApplication.Eff.FluentdLoggerとか
+
+----------------------------------------------------------
+20140527 認証
+
+認証が必要なAPIと不要なAPIがある
+デフォルトの挙動を決めて書き換えられるような感じか
+ログを必ず出力するとか
+
+data ApiSetting = ApiSetting
+    { authRequired :: Bool
+    , logVerbose :: Bool
+    , requestValidator :: Request -> Bool
+    , responseValidator :: Response -> Bool
+    }
+
+defaultApiSetting
+
+data Api a = Api ApiSetting a
+
+
+
 ----------------------------------------------------------
 20140525 やること
 
@@ -35,6 +65,10 @@ Kvsのタイムアウト
 エラー後の処理の分岐には原因は関係なさそう。リトライする場合などは必要か
 Kvsが不調 -> リトライする
 Kvsにデータがない -> リトライ不要
+
+エラー型で分岐することはあまりない
+existentialなタイプでエラー何でも入れられる型を作ってExcを一つだけ使うとかでいいか
+どうせTypeableにはする必要があるのでエラー型で分岐するときはキャストして使えばいい
 
 ----------------------------------------------------
 20140518 Binary
