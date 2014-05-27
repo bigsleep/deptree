@@ -14,6 +14,7 @@ log関数などの引数も部分適用したものを定義する
 認証が必要なAPIと不要なAPIがある
 デフォルトの挙動を決めて書き換えられるような感じか
 ログを必ず出力するとか
+バリデーションはパースできてればだいたいokな気もする。場合によるか
 
 data ApiSetting = ApiSetting
     { authRequired :: Bool
@@ -32,9 +33,9 @@ data Api a = Api ApiSetting a
 20140525 やること
 
 Routesのテスト -> DONE
-Loggerを直す。ロガー複数ある場合もありえる
+Loggerを直す。ロガー複数ある場合もありえる -> DONE
 IOの例外キャッチ? -> status500
-クライアント
+クライアント -> DONE テスト?
 JSON API
 コントローラー?
 warp
