@@ -5,7 +5,7 @@ module Application.Run.Kvs.RedisSpec
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Control.Eff.Lift (Lift, runLift)
-import Control.Eff.Logger (Logger, LogLevel(..), runLoggerStdIO)
+import Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import qualified Control.Eff.Kvs as Kvs (Kvs(..), get, set, setWithTtl, delete, KeyType)
 import Control.Concurrent (threadDelay)
 import qualified Database.Redis as Redis (get, set, setex, del, ConnectInfo(..), defaultConnectInfo, PortID(..), connect, runRedis, Status(..))
@@ -14,6 +14,7 @@ import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.ByteString.Lazy as L (ByteString, fromStrict, toStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
 
+import Application.Logger (Logger)
 import Application.Run.Kvs.Redis (runKvsRedis)
 
 import Test.Hspec (Spec, describe, it, shouldBe)
@@ -111,6 +112,6 @@ deleteSpec = describe "kvs-redis delete" $
         x `shouldBe` Right Nothing
 
 
-runTest :: Eff (Kvs.Kvs () :> Logger String :> Lift IO :> ()) a -> IO a
+runTest :: Eff (Kvs.Kvs () :> Logger :> Lift IO :> ()) a -> IO a
 runTest = runLift . runLoggerStdIO DEBUG . runKvsRedis testConnectInfo
 

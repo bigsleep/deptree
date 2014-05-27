@@ -10,7 +10,7 @@ import Control.Eff.Lift (Lift, runLift)
 import Control.Eff.Exception (Exc, runExc, throwExc)
 import Control.Eff.State.Strict (State, evalState)
 import Control.Eff.Reader.Strict (Reader, runReader)
-import Control.Eff.Logger (Logger, LogLevel(..), runLoggerStdIO)
+import Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import qualified Data.Map as M (Map, empty)
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (pack)
@@ -18,6 +18,7 @@ import qualified Data.ByteString.Lazy as L (ByteString, fromStrict, toStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import Data.UnixTime (UnixTime,  getUnixTime)
 
+import Application.Logger (Logger)
 import Application.Run.Kvs.Map (runKvsMap)
 import Application.Run.Session (runSession, SessionKvs(..), SessionError(..))
 
@@ -72,7 +73,7 @@ runTest :: Eff ( Session
               :> Exc SessionError
               :> Kvs.Kvs SessionKvs
               :> State (M.Map B.ByteString L.ByteString)
-              :> Logger String
+              :> Logger
               :> Lift IO
               :> ()) a
               -> IO (Either SessionError a)

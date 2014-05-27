@@ -6,19 +6,19 @@ module Application.Run.Kvs.Redis
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Control.Eff.Lift (Lift, lift)
 import qualified Control.Eff.Kvs as Kvs (Kvs(..), KeyType)
-import Control.Eff.Logger (Logger, logDebug, logError)
 import qualified Database.Redis as Redis (get, set, setex, del, ConnectInfo, connect, runRedis, Status(..))
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Lazy as L (toStrict, fromStrict)
 import Data.Typeable (Typeable)
 import Data.Serializable (serialize, deserialize)
 import Text.Printf.TH (s)
+import Application.Logger (Logger, logDebug, logError)
 
 
 runKvsRedis :: ( Typeable kvs,
                  Member (Lift IO) r,
                  SetMember Lift (Lift IO) r,
-                 Member (Logger String) r,
+                 Member Logger r,
                  Kvs.KeyType kvs ~ B.ByteString
                )
             => Redis.ConnectInfo -> Eff (Kvs.Kvs kvs :> r) a -> Eff r a

@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, FlexibleContexts, DeriveDataTypeable, DeriveFunctor #-}
+{-# LANGUAGE TypeOperators, FlexibleContexts, DeriveDataTypeable, DeriveFunctor, TypeFamilies #-}
 module Control.Eff.Logger
 ( log
 , logDebug
@@ -9,6 +9,7 @@ module Control.Eff.Logger
 , runLoggerStdIO
 , Logger(..)
 , LogLevel(..)
+, LogOutputType
 ) where
 
 import Control.Eff ((:>), VE(..), Eff, Member, SetMember, admin, handleRelay, inj, send)
@@ -19,22 +20,24 @@ import Prelude hiding (log)
 
 data LogLevel = DEBUG | NOTICE | INFO | WARN | ERROR deriving (Show, Read, Eq, Enum, Ord, Typeable)
 
-data Logger s a = Logger LogLevel s a deriving (Typeable, Functor)
+type family LogOutputType logger :: *
 
-log :: (Typeable s, Member (Logger s) r) => LogLevel -> s -> Eff r ()
-log l s = send $ \f -> inj $ Logger l s $ f ()
+data Logger logger a = Logger logger LogLevel (LogOutputType logger) a deriving (Typeable, Functor)
 
-logDebug, logNotice, logInfo, logWarn, logError :: (Member (Logger String) r) => String -> Eff r ()
-logDebug = log DEBUG
-logNotice = log NOTICE
-logInfo = log INFO
-logWarn = log WARN
-logError = log ERROR
+log :: (Typeable logger, Member (Logger logger) r) => logger -> LogLevel -> LogOutputType logger -> Eff r ()
+log logger lv s = send $ \f -> inj $ Logger logger lv s $ f ()
 
-runLoggerStdIO :: (Show s, Typeable s, Member (Lift IO) r, SetMember Lift (Lift IO) r)
-               => LogLevel -> Eff (Logger s :> r) a -> Eff r a
+logDebug, logNotice, logInfo, logWarn, logError :: (Typeable logger, Member (Logger logger) r) => logger -> LogOutputType logger -> Eff r ()
+logDebug = flip log DEBUG
+logNotice = flip log NOTICE
+logInfo = flip log INFO
+logWarn = flip log WARN
+logError = flip log ERROR
+
+runLoggerStdIO :: (Show (LogOutputType logger), Typeable logger, Member (Lift IO) r, SetMember Lift (Lift IO) r)
+               => LogLevel -> Eff (Logger logger :> r) a -> Eff r a
 runLoggerStdIO minL = loop minL . admin
     where loop _ (Val a) = return a
           loop mlv (E u) = handleRelay u (loop mlv) $
-                            \(Logger lv s f) -> when (lv >= mlv) (lift $ p lv s) >> loop mlv f
+                            \(Logger _ lv s f) -> when (lv >= mlv) (lift $ p lv s) >> loop mlv f
           p lv s = putStrLn $ "[" ++ show lv ++ "] " ++ show s

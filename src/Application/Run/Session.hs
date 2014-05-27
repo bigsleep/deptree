@@ -10,7 +10,6 @@ import Control.Eff.Reader.Strict (Reader, ask)
 import Control.Eff.Lift (Lift, lift)
 import Control.Eff.Exception (Exc, throwExc)
 import Control.Eff.Session (Session(..))
-import Control.Eff.Logger (Logger, logDebug, logInfo, logError)
 import qualified Control.Eff.Kvs as Kvs (Kvs, get, setWithTtl, delete, KeyType)
 import Data.Serializable (serialize)
 import Data.Typeable (Typeable)
@@ -19,6 +18,8 @@ import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.UnixTime as T (UnixTime, formatUnixTime)
 import System.Random (getStdGen, randomRs)
 import Text.Printf.TH (s)
+
+import Application.Logger (Logger, logDebug, logInfo, logError)
 
 deriving instance Typeable T.UnixTime
 
@@ -33,7 +34,7 @@ data SessionError =
     deriving (Show, Read, Eq, Typeable)
 
 runSession :: ( Member (Exc SessionError) r
-              , Member (Logger String) r
+              , Member Logger r
               , Member (Kvs.Kvs SessionKvs) r
               , Member (Reader T.UnixTime) r
               , SetMember Lift (Lift IO) r
