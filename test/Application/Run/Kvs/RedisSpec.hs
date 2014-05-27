@@ -33,7 +33,7 @@ kvsRedisSpec = do
 
 
 testConnectInfo :: Redis.ConnectInfo
-testConnectInfo = Redis.defaultConnectInfo { Redis.connectPort = Redis.PortNumber 6380 }
+testConnectInfo = Redis.defaultConnectInfo { Redis.connectDatabase = 15 }
 
 
 setSpec :: Spec
