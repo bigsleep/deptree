@@ -1,4 +1,21 @@
 -----------------------------------------------------------------
+20140601 View
+
+Api i o
+
+Request -> Maybe i
+o -> Maybe Response
+
+Viewの分離?
+
+iとoの型を決める
+
+Requestからiと
+oからResponseの関数を分けておけばいい?
+
+JSONだけ使う前提とかでもいいか
+
+-----------------------------------------------------------------
 20140527 Logger
 
 data Logger logger a
@@ -18,6 +35,7 @@ log関数などの引数も部分適用したものを定義する
 
 data ApiSetting = ApiSetting
     { authRequired :: Bool
+    , isSecure :: Bool
     , logVerbose :: Bool
     , requestValidator :: Request -> Bool
     , responseValidator :: Response -> Bool
@@ -27,6 +45,11 @@ defaultApiSetting
 
 data Api a = Api ApiSetting a
 
+
+withAuthorizationとかを使う?
+
+内部でユーザー情報使う場合は何も書かなくても認証必要になる
+ユーザー情報は必要ないけど要求する場合に簡単にかければいいか
 
 
 ----------------------------------------------------------
