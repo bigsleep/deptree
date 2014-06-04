@@ -1,6 +1,33 @@
 -----------------------------------------------------------------
 20140602
 
+oauth2用の機能?
+
+client id, client secret
+authorization uri
+redirect uri
+get access token
+get refresh token
+
+
+1. 認証用urlにリダイレクト stateを発行してセッションに保存
+    redirectToAuthenticationServer
+2. 認証コードからアクセストークンを取得 state確認
+    getAccessToken
+3. アクセストークンからユーザー情報を取得
+    getUserDetail, getTokenInfo
+
+4. refreshAccessToken
+
+Authenticateのバックエンドにoauth2を使う
+
+ログインしてユーザー情報取得, セッション発行
+
+失敗したらどこかに飛ばす
+
+-----------------------------------------------------------------
+20140602
+
 方針決まらないところもインターフェースだけあれば他のところはかける
 かけるところから書く
 
@@ -9,6 +36,8 @@
 Jsonのリクエストを
 {"request":{...}, "ssid":"aaaaaaaaaaaaa"}
 みたいな感じにすればいいか
+
+コンテンツタイプを見てjsonかクエリパラメーターか判断すればいいのか
 
 ----------------------------------------------------------------
 20140602 Api
