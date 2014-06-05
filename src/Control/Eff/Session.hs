@@ -1,32 +1,33 @@
-{-# LANGUAGE FlexibleContexts, DeriveDataTypeable, ExistentialQuantification #-}
+{-# LANGUAGE FlexibleContexts, DeriveDataTypeable, DeriveFunctor #-}
 module Control.Eff.Session
-( startSession
-, readSession
-, deleteSession
+( sget
+, sput
+, sdestroy
+, getSessionId
 , Session(..)
 ) where
 
 import Control.Eff (Eff, Member, inj, send)
-import Data.Serializable (Serializable)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
 
 data Session a =
-    forall v. (Typeable v, Serializable v) => StartSession v (B.ByteString -> a) |
-    forall v. (Typeable v, Serializable v) => ReadSession B.ByteString (v -> a) |
-    DeleteSession B.ByteString a
-    deriving (Typeable)
+    SessionGet B.ByteString (Maybe B.ByteString -> a) |
+    SessionPut B.ByteString B.ByteString a |
+    SessionDestroy a |
+    GetSessionId (B.ByteString -> a)
+    deriving (Functor, Typeable)
 
-instance Functor Session where
-    fmap f (StartSession v c) = StartSession v (f . c)
-    fmap f (ReadSession k c) = ReadSession k (f . c)
-    fmap f (DeleteSession k c) = DeleteSession k (f c)
+sget :: (Member Session r) => B.ByteString -> Eff r (Maybe B.ByteString)
+sget k = send $ inj . SessionGet k
 
-startSession :: (Typeable v, Serializable v, Member Session r) => v -> Eff r B.ByteString
-startSession v = send $ inj . StartSession v
+sput :: (Member Session r) => B.ByteString -> B.ByteString -> Eff r ()
+sput k v = send $ \f -> inj . SessionPut k v $ f ()
 
-readSession :: (Typeable v, Serializable v, Member Session r) => B.ByteString -> Eff r v
-readSession k = send $ inj . ReadSession k
+sdestroy :: (Member Session r) => Eff r ()
+sdestroy = send $ \f -> inj . SessionDestroy $ f ()
 
-deleteSession :: (Member Session r) => B.ByteString -> Eff r ()
-deleteSession k = send $ \f -> inj $ DeleteSession k $ f ()
+getSessionId :: (Member Session r) => Eff r B.ByteString
+getSessionId = send $ inj . GetSessionId
+
+
