@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes, DeriveDataTypeable, StandaloneDeriving, QuasiQuotes, TypeFamilies #-}
+{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes, QuasiQuotes, TypeFamilies #-}
 module Application.Run.Session
 ( runSession
 ) where
@@ -11,13 +11,12 @@ import Control.Eff.Session (Session(..))
 import qualified Control.Eff.Kvs as Kvs (Kvs, get, setWithTtl, delete, exists, ttl)
 
 import Control.Monad (when)
+import Control.Applicative ((<$>), (<*>))
 
-import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString, append)
 import qualified Data.ByteString.Char8 as B (pack)
-import qualified Data.UnixTime as T (UnixTime, formatUnixTime)
 import qualified Data.List as L (lookup)
-import qualified Data.HashMap.Strict as HM (lookup, insert)
+import qualified Data.HashMap.Strict as HM (lookup, insert, empty)
 import Data.Maybe (fromMaybe)
 
 import qualified Network.Wai as Wai (Request, requestHeaders)
@@ -26,18 +25,17 @@ import qualified Web.Cookie as Cookie (parseCookies)
 import System.Random (getStdGen, randomRs)
 import Text.Printf.TH (s)
 
-import Application.Session (SessionData(..), SessionKvs(..), defaultSessionData)
+import Application.Session (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
 import Application.Exception (Exception)
 import Application.Logger (Logger, logDebug, logInfo, logError)
-
-deriving instance Typeable T.UnixTime
+import qualified Application.Time as T (Time, formatTime, addSeconds)
 
 runSession :: ( Member Exception r
               , Member Logger r
               , Member (Kvs.Kvs SessionKvs) r
-              , Member (Reader T.UnixTime) r
+              , Member (Reader T.Time) r
               , Member (Reader Wai.Request) r
-              , Member (State.State SessionData) r
+              , Member (State.State SessionState) r
               , SetMember Lift (Lift IO) r
               )
            => B.ByteString -> Integer -> Eff (Session :> r) a -> Eff r a
@@ -54,15 +52,21 @@ runSession sessionName ttl eff = do
             request <- ask
             sid <- return . getRequestSessionId sessionName $ request
             sd <- maybe (return Nothing) (Kvs.get SessionKvs) sid
-            maybe (return ()) State.put (sd :: Maybe SessionData)
+            maybe (return ()) putLoadedSession ((,) <$> sid <*> sd)
             logDebug $ [s|load session. session=%s|] (show sd)
+
+          putLoadedSession (sid, sd) = do
+            cur <- ask
+            if cur < sessionExpireDate sd
+                then State.put SessionState { sessionId = sid, sessionData = sd, isNew = False }
+                else Kvs.delete SessionKvs sid >> State.put defaultSessionState
 
           saveSession = do
             sd <- State.get
             let sid = sessionId sd
             when (sid /= "") $ do
                 currentTtl <- fmap (fromMaybe ttl) $ Kvs.ttl SessionKvs sid
-                Kvs.setWithTtl SessionKvs sid sd currentTtl
+                Kvs.setWithTtl SessionKvs sid (sessionData sd) currentTtl
                 logDebug $ [s|save session. session=%s|] (show sd)
 
           newSession = do
@@ -73,22 +77,26 @@ runSession sessionName ttl eff = do
             if duplicate
                 then newSession
                 else do
-                     State.put (defaultSessionData { sessionId = sid })
+                     let start = t
+                     let end = T.addSeconds start ttl
+                     let sd = SessionData HM.empty start end
+                     State.put SessionState { sessionId = sid, sessionData = sd, isNew = True }
                      logInfo $ [s|new session. sessionId=%s|] sid
 
           handle (SessionGet k c) =
-            loop . c . HM.lookup k . sessionValue =<< State.get
+            loop . c . HM.lookup k . sessionValue . sessionData =<< State.get
 
           handle (SessionPut k v c) = do
             sd <- State.get
             when (sessionId sd == "") newSession
-            State.modify (\x -> x { sessionValue = HM.insert k v (sessionValue x) })
+            State.modify f
             loop c
+            where f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k v m } }
 
           handle (SessionDestroy c) = do
             sid <- fmap sessionId State.get
             when (sid /= "") (Kvs.delete SessionKvs sid >> return ())
-            State.put defaultSessionData
+            State.put defaultSessionState
             loop c
 
           handle (GetSessionId c) =
@@ -102,9 +110,9 @@ genRandomByteString :: Int -> IO B.ByteString
 genRandomByteString len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< getStdGen
     where chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
 
-genSessionId :: T.UnixTime -> Int -> IO B.ByteString
+genSessionId :: T.Time -> Int -> IO B.ByteString
 genSessionId t len = do
-    dateStr <- T.formatUnixTime ":%Y%m%d:" t
+    let dateStr = B.pack $ T.formatTime ":%Y%m%d:" t
     randomStr <- genRandomByteString len
     return $ "SID" `B.append` dateStr `B.append` randomStr
 
