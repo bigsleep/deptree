@@ -20,7 +20,6 @@ import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.ByteString.Lazy as L (ByteString, fromStrict, toStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
-import Data.UnixTime (UnixTime,  getUnixTime)
 import Data.Serializable (serialize)
 
 import qualified Network.Wai as Wai (Request, defaultRequest, requestHeaders)
@@ -30,8 +29,9 @@ import Blaze.ByteString.Builder (toByteString)
 import Application.Logger (Logger, logDebug)
 import Application.Run.Kvs.Map (runKvsMap)
 import Application.Exception (Exception(..))
-import Application.Session (SessionKvs(..), SessionError(..), SessionData(..), defaultSessionData)
+import Application.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
 import Application.Run.Session (runSession)
+import Application.Time (Time, getCurrentTime, addSeconds)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import qualified Test.Hspec.QuickCheck as Q
@@ -58,7 +58,9 @@ sessionSpec = describe "session" $ do
         let key = "hello"
         let val = "world"
         let sval = HM.fromList [(key, val)]
-        let sd = serialize defaultSessionData { sessionId = sid, sessionValue = sval }
+        t <- getCurrentTime
+        let expireDate = addSeconds t 10
+        let sd = serialize SessionData { sessionValue = sval, sessionStartDate = t, sessionExpireDate = expireDate }
         let sessionState = M.fromList [(sid, sd)]
         let code = do
                     v <- sget key
@@ -88,22 +90,22 @@ runTest :: B.ByteString ->
            Eff ( Session
               :> Kvs.Kvs SessionKvs
               :> State (M.Map B.ByteString L.ByteString)
-              :> State SessionData
+              :> State SessionState
               :> Exception
               :> Reader Wai.Request
-              :> Reader UnixTime
+              :> Reader Time
               :> Logger
               :> Lift IO
               :> ()) a ->
            IO (Either SomeException (M.Map B.ByteString L.ByteString, a))
 runTest name s request a = do
-    t <- getUnixTime
+    t <- getCurrentTime
     runLift
         . runLoggerStdIO DEBUG
         . flip runReader t
         . flip runReader request
         . runExc
-        . evalState defaultSessionData
+        . evalState defaultSessionState
         . runState s
         . runKvsMap
         . runSession name 0 $ a
