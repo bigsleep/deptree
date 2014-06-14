@@ -6,17 +6,20 @@ module Application.HttpResponse
 
 import Control.Eff (Eff, Member)
 import qualified Control.Eff.HttpResponse as R (HttpResponse, putResponse)
+
 import qualified Network.Wai as Wai (Response, responseLBS)
-import qualified Network.HTTP.Types as HTTP (status302)
+import qualified Network.HTTP.Types as HTTP (status302, Query, renderQueryBuilder)
+
 import qualified Data.ByteString as B (ByteString)
+import qualified Blaze.ByteString.Builder as Blaze (toByteString, fromByteString)
+import Data.Monoid ((<>))
 
 putResponse :: (Member (R.HttpResponse Wai.Response) r)
             => Wai.Response -> Eff r ()
 putResponse = R.putResponse
 
-redirect :: (Member (R.HttpResponse Wai.Response) r)
-         => B.ByteString -> Eff r ()
-redirect uri = do
-    let headers = [("Location", uri)]
-    putResponse $ Wai.responseLBS HTTP.status302 headers ""
-
+redirect :: B.ByteString -> HTTP.Query -> Wai.Response
+redirect uri params =
+    let builder = Blaze.fromByteString uri <> HTTP.renderQueryBuilder True params
+        headers = [("Location", Blaze.toByteString builder)]
+    in Wai.responseLBS HTTP.status302 headers ""

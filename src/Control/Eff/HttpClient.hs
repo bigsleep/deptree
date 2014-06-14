@@ -3,6 +3,7 @@ module Control.Eff.HttpClient
 ( HttpClient(..)
 , httpClient
 , runHttpClient
+, runHttpClientMock
 ) where
 import Control.Eff ((:>), VE(..), Eff, Member, SetMember, admin, handleRelay, inj, send)
 import Control.Eff.Lift (Lift, lift)
@@ -23,3 +24,10 @@ runHttpClient eff = do
     where loop _ (Val a) = return a
           loop m (E u) = handleRelay u (loop m) $
                             \(HttpClient req f) -> lift (N.httpLbs req m) >>= loop m . f
+
+runHttpClientMock :: (N.Request -> N.Response L.ByteString) -> Eff (HttpClient :> r) a -> Eff r a
+runHttpClientMock server = loop . admin
+    where loop (Val a) = return a
+          loop (E u) = handleRelay u loop $ \(HttpClient req f) -> loop . f $ server req
+
+

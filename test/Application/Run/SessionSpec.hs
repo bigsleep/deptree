@@ -4,7 +4,7 @@ module Application.Run.SessionSpec
 ) where
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
-import Control.Eff.Session (Session(..), sget, sput, sdestroy, getSessionId)
+import Control.Eff.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId)
 import qualified Control.Eff.Kvs as Kvs (Kvs(..), get)
 import Control.Eff.Lift (Lift, runLift)
 import Control.Eff.Exception (Exc, runExc, throwExc)
@@ -45,6 +45,7 @@ sessionSpec = describe "session" $ do
         let val = "hello" :: B.ByteString
         let code = do
                     sput key val
+                    sttl 10
                     getSessionId
         Right (s, sid) <- runTest "SID" M.empty Wai.defaultRequest code
         shouldSatisfy s (M.member sid)

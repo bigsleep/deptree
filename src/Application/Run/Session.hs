@@ -28,7 +28,7 @@ import Text.Printf.TH (s)
 import Application.Session (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
 import Application.Exception (Exception)
 import Application.Logger (Logger, logDebug, logInfo, logError)
-import qualified Application.Time as T (Time, formatTime, addSeconds)
+import qualified Application.Time as T (Time, formatTime, addSeconds, diffTime)
 
 runSession :: ( Member Exception r
               , Member Logger r
@@ -65,9 +65,12 @@ runSession sessionName ttl eff = do
             sd <- State.get
             let sid = sessionId sd
             when (sid /= "") $ do
-                currentTtl <- fmap (fromMaybe ttl) $ Kvs.ttl SessionKvs sid
-                Kvs.setWithTtl SessionKvs sid (sessionData sd) currentTtl
-                logDebug $ [s|save session. session=%s|] (show sd)
+                current <- ask
+                let expire = sessionExpireDate . sessionData $ sd
+                    ttl' = T.diffTime expire current
+                when (ttl' > 0) $ do
+                    Kvs.setWithTtl SessionKvs sid (sessionData sd) ttl'
+                    logDebug $ [s|save session. session=%s ttl=%d|] (show sd) ttl'
 
           newSession = do
             t <- ask
@@ -92,6 +95,13 @@ runSession sessionName ttl eff = do
             State.modify f
             loop c
             where f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k v m } }
+
+          handle (SessionTtl ttl' c) = do
+            t <- ask
+            let expire = T.addSeconds t ttl'
+            State.modify (f expire)
+            loop c
+            where f expire ses @ (SessionState _ d _) = ses { sessionData = d { sessionExpireDate = expire } }
 
           handle (SessionDestroy c) = do
             sid <- fmap sessionId State.get
