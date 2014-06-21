@@ -5,19 +5,22 @@ module Control.Eff.Session
 , sttl
 , sdestroy
 , getSessionId
+, renderSetCookie
 , Session(..)
 ) where
 
 import Control.Eff (Eff, Member, inj, send)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
+import qualified Network.HTTP.Types as HTTP (Header)
 
 data Session a =
     SessionGet B.ByteString (Maybe B.ByteString -> a) |
     SessionPut B.ByteString B.ByteString a |
     SessionTtl Integer a |
     SessionDestroy a |
-    GetSessionId (B.ByteString -> a)
+    GetSessionId (B.ByteString -> a) |
+    RenderSetCookie (HTTP.Header -> a)
     deriving (Functor, Typeable)
 
 sget :: (Member Session r) => B.ByteString -> Eff r (Maybe B.ByteString)
@@ -34,3 +37,6 @@ sdestroy = send $ \f -> inj . SessionDestroy $ f ()
 
 getSessionId :: (Member Session r) => Eff r B.ByteString
 getSessionId = send $ inj . GetSessionId
+
+renderSetCookie :: (Member Session r) => Eff r HTTP.Header
+renderSetCookie = send $ inj . RenderSetCookie

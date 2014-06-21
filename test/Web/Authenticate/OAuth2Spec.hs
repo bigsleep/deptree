@@ -181,7 +181,7 @@ runTest name s request cresponse t =
     . evalState defaultSessionState
     . runState s
     . runKvsMap
-    . runSession name 0
+    . runSession name False 0
     . runHttpClientMock cresponse
 
 

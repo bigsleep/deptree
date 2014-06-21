@@ -8,8 +8,7 @@ module Web.Authenticate.OAuth2
 
 import Control.Eff (Eff, Member)
 import Control.Eff.HttpClient (HttpClient, httpClient)
-import qualified Control.Eff.Session as Session (Session, sput, sget, sttl)
-import Control.Eff.HttpResponse (HttpResponse, putResponse)
+import qualified Control.Eff.Session as Session (Session, sput, sget, sttl, renderSetCookie)
 import qualified Control.Exception (Exception)
 import Control.Monad (unless)
 
@@ -51,7 +50,7 @@ redirectToAuthorizationServer
 redirectToAuthorizationServer oauth2 state = do
     Session.sput "state" state
     Session.sttl 30
-    --setCookie <- Session.renderSetCookie
+    setCookie <- Session.renderSetCookie
     let params = [ ("client_id", Just $ oauth2ClientId oauth2)
                  , ("response_type", Just "code")
                  , ("scope", Just $ oauth2Scope oauth2)
@@ -59,7 +58,7 @@ redirectToAuthorizationServer oauth2 state = do
                  , ("state", Just state)
                  ]
         url = oauth2AuthorizationUri oauth2 `B.append` HTTP.renderQuery True params
-        headers = [("Location", url){--, setCookie--}]
+        headers = [("Location", url), setCookie]
         response = Wai.responseLBS HTTP.status302 headers ""
     return response
 

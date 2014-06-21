@@ -47,7 +47,7 @@ sessionSpec = describe "session" $ do
                     sput key val
                     sttl 10
                     getSessionId
-        Right (s, sid) <- runTest "SID" M.empty Wai.defaultRequest code
+        Right (s, sid) <- runTest "SID" False M.empty Wai.defaultRequest code
         shouldSatisfy s (M.member sid)
 
     it "restore automatically" $ do
@@ -67,7 +67,7 @@ sessionSpec = describe "session" $ do
                     v <- sget key
                     sid' <- getSessionId
                     return (v, sid')
-        Right (_, result) <- runTest name sessionState request code
+        Right (_, result) <- runTest name False sessionState request code
         result `shouldBe` (Just val, sid)
 
     it "destroy" $ do
@@ -79,13 +79,14 @@ sessionSpec = describe "session" $ do
                     sdestroy
                     after <- getSessionId
                     return (before, after)
-        Right (s, (_, afterId)) <- runTest "SID" M.empty Wai.defaultRequest code
+        Right (s, (_, afterId)) <- runTest "SID" False M.empty Wai.defaultRequest code
         afterId `shouldBe` ""
         shouldSatisfy s M.null
 
 
 
 runTest :: B.ByteString ->
+           Bool ->
            M.Map B.ByteString L.ByteString ->
            Wai.Request ->
            Eff ( Session
@@ -99,7 +100,7 @@ runTest :: B.ByteString ->
               :> Lift IO
               :> ()) a ->
            IO (Either SomeException (M.Map B.ByteString L.ByteString, a))
-runTest name s request a = do
+runTest name isSecure s request a = do
     t <- getCurrentTime
     runLift
         . runLoggerStdIO DEBUG
@@ -109,4 +110,4 @@ runTest name s request a = do
         . evalState defaultSessionState
         . runState s
         . runKvsMap
-        . runSession name 0 $ a
+        . runSession name isSecure 0 $ a

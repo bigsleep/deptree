@@ -18,9 +18,10 @@ import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.List as L (lookup)
 import qualified Data.HashMap.Strict as HM (lookup, insert, empty)
 import Data.Maybe (fromMaybe)
+import qualified Blaze.ByteString.Builder as Blaze (toByteString)
 
 import qualified Network.Wai as Wai (Request, requestHeaders)
-import qualified Web.Cookie as Cookie (parseCookies)
+import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCookieName, setCookieValue, setCookieExpires, setCookieSecure)
 
 import System.Random (getStdGen, randomRs)
 import Text.Printf.TH (s)
@@ -38,8 +39,8 @@ runSession :: ( Member Exception r
               , Member (State.State SessionState) r
               , SetMember Lift (Lift IO) r
               )
-           => B.ByteString -> Integer -> Eff (Session :> r) a -> Eff r a
-runSession sessionName ttl eff = do
+           => B.ByteString -> Bool -> Integer -> Eff (Session :> r) a -> Eff r a
+runSession sessionName isSecure ttl eff = do
     loadSession
     r <- loop . admin $ eff
     saveSession
@@ -111,6 +112,18 @@ runSession sessionName ttl eff = do
 
           handle (GetSessionId c) =
             loop . c . sessionId =<< State.get
+
+          handle (RenderSetCookie c) = do
+            session <- State.get
+            let sid = sessionId session
+                expire = sessionExpireDate . sessionData $ session
+                setCookie = Cookie.def
+                          { Cookie.setCookieName = sessionName
+                          , Cookie.setCookieValue = sid
+                          , Cookie.setCookieExpires = Just expire
+                          , Cookie.setCookieSecure = isSecure
+                          }
+            loop . c $ ("Set-Cookie", Blaze.toByteString . Cookie.renderSetCookie $ setCookie)
 
 
 getRequestSessionId :: B.ByteString -> Wai.Request -> Maybe B.ByteString
