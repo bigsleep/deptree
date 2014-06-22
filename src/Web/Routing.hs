@@ -5,6 +5,7 @@ module Web.Routing
 , get
 , post
 , parseRoute
+, RouteDefinition(..)
 ) where
 
 import Control.Monad (msum, when, liftM)
