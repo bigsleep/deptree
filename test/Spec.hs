@@ -1,9 +1,9 @@
 module Main where
 
-import Application.Run.Kvs.RedisSpec (kvsRedisSpec)
-import Application.Run.SessionSpec (sessionSpec)
-import Web.RoutingSpec (routingSpec)
-import Web.Authenticate.OAuth2Spec (oauth2Spec)
+import Wf.Control.Eff.Run.Kvs.RedisSpec (kvsRedisSpec)
+import Wf.Control.Eff.Run.SessionSpec (sessionSpec)
+import Wf.Web.RoutingSpec (routingSpec)
+import Wf.Web.Authenticate.OAuth2Spec (oauth2Spec)
 
 import Test.Hspec (hspec)
 
