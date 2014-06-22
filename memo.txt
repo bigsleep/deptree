@@ -1,3 +1,23 @@
+--------------------------------------------------------
+20140622 api
+
+data WApi i o m = WApi
+    {
+        wapiRouteDefinition :: RouteDefinition,
+        wapiRequestParser :: ByteString -> Maybe i,
+        wapiResponseRenderer :: o -> ByteString,
+        wapiImplement :: i -> m o,
+        wapiAuthRequired :: Bool,
+        wapiIsSecure :: Bool
+    }
+
+routes :: [Wapi i o m] -> m Response
+
+レスポンスのヘッダ?
+Content-Type
+Set-Cookie
+
+
 ----------------------------------------------------------
 20140620 oauth2 TODO
 
