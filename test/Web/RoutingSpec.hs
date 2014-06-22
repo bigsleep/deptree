@@ -1,18 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
-module Application.RoutesSpec
-( routesSpec
+module Web.RoutingSpec
+( routingSpec
 ) where
 
 import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
 import qualified Data.ByteString as B (ByteString, concat)
 import qualified Data.List as L (lookup)
 
-import qualified Application.Routes as R
+import qualified Web.Routing as R
 
 import Test.Hspec (Spec, describe, it, shouldBe)
 
-routesSpec :: Spec
-routesSpec = describe "routes" $
+routingSpec :: Spec
+routingSpec = describe "routes" $
     it "dispatch correctly" $ do
         myapp HTTP.methodGet "/" `shouldBe` Just "root"
         myapp HTTP.methodPost "/" `shouldBe` Nothing
@@ -26,10 +26,10 @@ routesSpec = describe "routes" $
 
 myapp :: HTTP.Method -> B.ByteString -> Maybe B.ByteString
 myapp = R.routes Nothing
-    [ R.get "/" (return "root")
-    , R.get "/news" (return "news")
-    , R.get' "/blog/:year/:month/:day" blog
-    , R.post "/user/register" (return "register")
+    [ R.get "/" (return "root" :: Maybe B.ByteString)
+    , R.get "/news" (return "news" :: Maybe B.ByteString)
+    , R.get "/blog/:year/:month/:day" blog
+    , R.post "/user/register" (return "register" :: Maybe B.ByteString)
     ]
 
 blog :: [(B.ByteString, B.ByteString)] -> Maybe B.ByteString
