@@ -97,7 +97,7 @@ class Adaptable a b where
     adapt :: a -> [Parameter] -> b
 
 instance Adaptable a a where
-    adapt a _ = a
+    adapt = const
 
 instance Adaptable ([Parameter] -> a) a where
     adapt = ($)
