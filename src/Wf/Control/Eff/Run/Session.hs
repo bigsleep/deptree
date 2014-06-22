@@ -23,7 +23,7 @@ import qualified Blaze.ByteString.Builder as Blaze (toByteString)
 import qualified Network.Wai as Wai (Request, requestHeaders)
 import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCookieName, setCookieValue, setCookieExpires, setCookieSecure)
 
-import System.Random (getStdGen, randomRs)
+import System.Random (newStdGen, randomRs)
 import Text.Printf.TH (s)
 
 import Wf.Web.Session (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
@@ -130,7 +130,7 @@ getRequestSessionId :: B.ByteString -> Wai.Request -> Maybe B.ByteString
 getRequestSessionId name = (L.lookup name =<<) . fmap Cookie.parseCookies . L.lookup "Cookie" . Wai.requestHeaders
 
 genRandomByteString :: Int -> IO B.ByteString
-genRandomByteString len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< getStdGen
+genRandomByteString len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< newStdGen
     where chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
 
 genSessionId :: B.ByteString -> T.Time -> Int -> IO B.ByteString

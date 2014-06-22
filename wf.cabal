@@ -84,3 +84,30 @@ test-suite spec
                         hspec >=1.9 && <1.10,
                         QuickCheck >=2.7 && <2.8
   default-language:     Haskell2010
+
+executable session-example1
+  hs-source-dirs:       example, src
+  main-is:              SessionExample1.hs
+  build-depends:        wf,
+                        warp,
+                        base >=4.7 && <4.8,
+                        extensible-effects >=1.4 && <1.5,
+                        aeson >=0.6 && <0.7,
+                        unordered-containers >=0.2 && <0.3,
+                        bytestring >=0.10 && <0.11,
+                        http-client >=0.3 && <0.4,
+                        http-types >=0.8 && <0.9,
+                        blaze-builder >=0.3 && <0.4,
+                        wai >=2.1 && <2.2,
+                        cookie >=0.4 && <0.5,
+                        random >=1.0 && <1.1,
+                        th-printf >=0.3 && <0.4,
+                        containers >=0.5 && <0.6,
+                        hedis >=0.6 && <0.7,
+                        text >=1.1 && <1.2,
+                        time >=1.4 && <1.5,
+                        old-locale >=1.0 && <1.1,
+                        hspec >=1.9 && <1.10,
+                        QuickCheck >=2.7 && <2.8
+
+  default-language:     Haskell2010
