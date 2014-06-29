@@ -53,11 +53,11 @@ main = do
     Warp.run 8080 server
     where
     errorResponse = Wai.responseLBS HTTP.status500 [] ""
-    server request = do
+    server request respond = do
         r <- run app request
         case r of
-             Right res -> return res
-             Left e -> return errorResponse
+             Right res -> respond res
+             Left _ -> respond errorResponse
 
 redisConnectInfo :: Redis.ConnectInfo
 redisConnectInfo = Redis.defaultConnectInfo { Redis.connectDatabase = 2 }

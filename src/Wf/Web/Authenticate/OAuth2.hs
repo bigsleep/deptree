@@ -1,34 +1,35 @@
-{-# LANGUAGE OverloadedStrings, FlexibleContexts, DeriveDataTypeable #-}
+{-# LANGUAGE OverloadedStrings, FlexibleContexts, DeriveDataTypeable, TypeFamilies #-}
 module Wf.Web.Authenticate.OAuth2
 ( OAuth2(..)
 , redirectToAuthorizationServer
 , getAccessToken
-, getTokenInfo
 ) where
 
-import Control.Eff (Eff, Member)
+import Control.Eff (Eff, Member, SetMember)
+import Control.Eff.Lift (Lift, lift)
 import Wf.Control.Eff.HttpClient (HttpClient, httpClient)
+import Wf.Control.Eff.HttpResponse (HttpResponse, addHeader, redirect)
 import qualified Wf.Control.Eff.Session as Session (Session, sput, sget, sttl, renderSetCookie)
 import qualified Control.Exception (Exception)
 import Control.Monad (unless)
 
 import qualified Data.ByteString as B (ByteString, append)
-import qualified Data.ByteString.Char8 as B (unpack)
+import qualified Data.ByteString.Char8 as B (pack, unpack)
 import qualified Data.Text.Encoding as T (encodeUtf8)
 import Data.Maybe (isJust)
 import Data.Typeable (Typeable)
 import qualified Data.Aeson as DA (Value(..), Result(..), decode, (.:?))
 import qualified Data.Aeson.Types as DA (parse)
 
-import qualified Network.Wai as Wai (Response, responseLBS)
 import qualified Network.HTTP.Client as N (Request(..), RequestBody(..), Response(..), parseUrl)
-import qualified Network.HTTP.Types as HTTP (methodPost, renderQuery, status200, status302)
+import qualified Network.HTTP.Types as HTTP (methodPost, renderQuery, status200)
+
+import System.Random (newStdGen, randomRs)
 
 import Wf.Application.Exception (Exception, throwException)
+import Wf.Application.Logger (Logger)
 
-
-
-data OAuth2 = OAuth2
+data OAuth2 user m = OAuth2
     { oauth2AuthorizationServerName :: B.ByteString
     , oauth2AuthorizationUri :: B.ByteString
     , oauth2TokenUri :: B.ByteString
@@ -36,7 +37,8 @@ data OAuth2 = OAuth2
     , oauth2ClientSecret :: B.ByteString
     , oauth2RedirectUri :: B.ByteString
     , oauth2Scope :: B.ByteString
-    } deriving (Show, Eq, Typeable)
+    , oauth2Authenticate :: B.ByteString -> m user
+    } deriving (Typeable)
 
 
 data OAuth2Error = OAuth2Error String deriving (Show, Typeable)
@@ -45,9 +47,14 @@ instance Control.Exception.Exception OAuth2Error
 
 
 redirectToAuthorizationServer
-    :: (Member Session.Session r)
-    => OAuth2 -> B.ByteString -> Eff r Wai.Response
-redirectToAuthorizationServer oauth2 state = do
+    :: ( Member Session.Session r
+       , Member HttpResponse r
+       , SetMember Lift (Lift IO) r
+       )
+    => OAuth2 u m -> Eff r ()
+redirectToAuthorizationServer oauth2 = do
+    g <- lift newStdGen
+    let state = B.pack . take stateLen . map (chars !!) . randomRs (0, length chars - 1) $ g
     Session.sput "state" state
     Session.sttl 30
     setCookie <- Session.renderSetCookie
@@ -58,14 +65,16 @@ redirectToAuthorizationServer oauth2 state = do
                  , ("state", Just state)
                  ]
         url = oauth2AuthorizationUri oauth2 `B.append` HTTP.renderQuery True params
-        headers = [("Location", url), setCookie]
-        response = Wai.responseLBS HTTP.status302 headers ""
-    return response
+    addHeader setCookie
+    redirect url
+    where
+    stateLen = 40
+    chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
 
 
 getAccessToken
     :: (Member HttpClient r, Member Exception r, Member Session.Session r)
-    => OAuth2 -> B.ByteString -> B.ByteString -> Eff r B.ByteString
+    => OAuth2 u m -> B.ByteString -> B.ByteString -> Eff r B.ByteString
 getAccessToken oauth2 code state = do
     let params = [ ("code", Just code)
                  , ("redirect_uri", Just $ oauth2RedirectUri oauth2)
@@ -105,30 +114,3 @@ getAccessToken oauth2 code state = do
     where g obj key = case DA.parse (DA..:? key) obj of
                            DA.Success (Just (DA.String v)) -> return (T.encodeUtf8 v)
                            _ -> throwException . OAuth2Error $ "no field. obj: " ++ show obj ++ " key: " ++ show key
-
-
-getTokenInfo
-    :: (Member HttpClient r, Member Exception r)
-    => OAuth2 -> B.ByteString -> Eff r DA.Value
-getTokenInfo oauth2 accessToken = do
-    let headers = [ ("Authorization", "OAuth " `B.append` accessToken)
-                  , ("Accept", "application/json")
-                  ]
-
-    reqInit <- case N.parseUrl . B.unpack . oauth2TokenUri $ oauth2 of
-                    Right r -> return r
-                    Left e -> throwException e
-
-    let req = reqInit { N.method = HTTP.methodPost
-                      , N.secure = True
-                      , N.requestHeaders = headers
-                      }
-
-    res <- httpClient req
-
-    unless (N.responseStatus res == HTTP.status200) .
-        throwException . OAuth2Error $ "token server returned other than status200. response: " ++ show res
-
-    case DA.decode $ N.responseBody res of
-         Just a -> return a
-         Nothing -> throwException . OAuth2Error $ "json parse failed. response: " ++ show res

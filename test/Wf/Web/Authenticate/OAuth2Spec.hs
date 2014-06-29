@@ -5,7 +5,7 @@ module Wf.Web.Authenticate.OAuth2Spec
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Wf.Control.Eff.HttpClient (HttpClient(..), httpClient, runHttpClientMock)
-import Wf.Control.Eff.HttpResponse (HttpResponse(..))
+import Wf.Control.Eff.HttpResponse (HttpResponse(..), Response(..))
 import Wf.Control.Eff.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId)
 import qualified Wf.Control.Eff.Kvs as Kvs (Kvs(..), get)
 import Control.Eff.Lift (Lift, runLift)
@@ -48,7 +48,7 @@ import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import qualified Test.Hspec.QuickCheck as Q
 import qualified Test.QuickCheck.Property as Q
 
-oauth2TestSetting :: OAuth2
+oauth2TestSetting :: OAuth2 u m
 oauth2TestSetting = OAuth2
     { oauth2AuthorizationServerName = "test"
     , oauth2AuthorizationUri = "https://test.com/authorization"
@@ -70,23 +70,22 @@ oauth2Spec :: Spec
 oauth2Spec = describe "oauth2" $ do
     redirectAuthServerSpec
     getAccessTokenSpec
-    getTokenInfoSpec
 
 
 redirectAuthServerSpec :: Spec
 redirectAuthServerSpec =
     it "redirect to authorization server" $ do
         let oauth2 = oauth2TestSetting
-            code = redirectToAuthorizationServer oauth2 ""
+            code = redirectToAuthorizationServer oauth2 >> get
         t <- getCurrentTime
 
         Right (m, res) <- runTest "SID" M.empty Wai.defaultRequest (const defaultClientResponse) t code
 
-        let Just (redirectUri, paramsStr) = L.lookup "Location" (Wai.responseHeaders res) >>= return . B.break (== '?')
+        let Just (redirectUri, paramsStr) = L.lookup "Location" (responseHeaders res) >>= return . B.break (== '?')
         let params = HTTP.parseQuery paramsStr
         let Just session = deserialize . L.head . M.elems $ m
 
-        Wai.responseStatus res `shouldBe` HTTP.status302
+        responseStatus res `shouldBe` HTTP.status302
         redirectUri `shouldBe` oauth2AuthorizationUri oauth2
 
         let f name ps = L.lookup name ps >>= id
@@ -138,22 +137,6 @@ getAccessTokenSpec = describe "get access token" $ do
         shouldSatisfy r isLeft
 
 
-getTokenInfoSpec :: Spec
-getTokenInfoSpec = describe "get token info" $ do
-    let accessToken = "test_access_token_xxx"
-        oauth2 = oauth2TestSetting
-        tinfo = DA.Object . HM.fromList $ [("access_token", DA.String . T.decodeUtf8 $ accessToken), ("email", DA.String "aaa@bbb.com")]
-        run = runTest "SID" M.empty Wai.defaultRequest (tokenInfoServer oauth2 accessToken tinfo) mjd
-
-    it "success with a right access token" $ do
-        Right (_, result) <- run $ getTokenInfo oauth2 accessToken
-        result `shouldBe` tinfo
-
-    it "fail with a wrong access token" $ do
-        e <- run $ getTokenInfo oauth2 (accessToken `B.append` "'")
-        shouldSatisfy e isLeft
-
-
 runTest ::
     B.ByteString ->
     M.Map B.ByteString L.ByteString ->
@@ -165,6 +148,8 @@ runTest ::
         :> Kvs.Kvs SessionKvs
         :> State (M.Map B.ByteString L.ByteString)
         :> State SessionState
+        :> HttpResponse
+        :> State Response
         :> Exception
         :> Reader Wai.Request
         :> Reader Time
@@ -178,6 +163,8 @@ runTest name s request cresponse t =
     . flip runReader t
     . flip runReader request
     . runExc
+    . evalState (Response {})
+    . runHttpResponse
     . evalState defaultSessionState
     . runState s
     . runKvsMap
@@ -185,7 +172,7 @@ runTest name s request cresponse t =
     . runHttpClientMock cresponse
 
 
-authServer :: OAuth2 -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
+authServer :: OAuth2 u m -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
 authServer oauth2 code accessToken request =
     if params == expected
         then successResponse
@@ -207,7 +194,7 @@ authServer oauth2 code accessToken request =
           errorResponse = defaultClientResponse { N.responseStatus = HTTP.status403 }
 
 
-tokenInfoServer :: OAuth2 -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
+tokenInfoServer :: OAuth2 u m -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
 tokenInfoServer oauth2 accessToken tokenInfo request =
     if requestAccessToken == Just ("OAuth " `B.append` accessToken)
         then successResponse

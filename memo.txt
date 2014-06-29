@@ -18,6 +18,23 @@ redirect_uriがリクエストパスと一致していてcodeがあればアク�
 Waiを直接使わないほうがいいか
 HttpRequest, HttpResponse
 
+リクエスト、レスポンスのインターフェースを全部作るの面倒臭い
+
+
+認証するインターフェースと
+認証を移譲してどこかに飛ばすインターフェースにする?
+
+authenticate
+authenticationTransfer
+
+oauth2はこの二つあればいけるか?
+
+ユーザーの情報
+認証サーバー: google, facebook, github, ...
+ユーザーID: 文字列?, user identification
+e-mail: 無い場合もある?
+
+JWT bearer token?
 
 ------------------------------------------------------------
 20140626 config?
