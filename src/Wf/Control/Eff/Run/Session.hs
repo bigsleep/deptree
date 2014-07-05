@@ -15,10 +15,12 @@ import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as B (ByteString, append)
 import qualified Data.ByteString.Char8 as B (pack)
+import qualified Data.ByteString.Lazy as L (toStrict, fromStrict)
 import qualified Data.List as L (lookup)
 import qualified Data.HashMap.Strict as HM (lookup, insert, empty)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import qualified Blaze.ByteString.Builder as Blaze (toByteString)
+import qualified Data.Aeson as DA (decode, encode)
 
 import qualified Network.Wai as Wai (Request, requestHeaders)
 import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCookieName, setCookieValue, setCookieExpires, setCookieSecure)
@@ -87,15 +89,17 @@ runSession sessionName isSecure ttl eff = do
                      State.put SessionState { sessionId = sid, sessionData = sd, isNew = True }
                      logInfo $ [s|new session. sessionId=%s|] sid
 
-          handle (SessionGet k c) =
-            loop . c . HM.lookup k . sessionValue . sessionData =<< State.get
+          handle (SessionGet k c) = do
+            m <- return . HM.lookup k . sessionValue . sessionData =<< State.get
+            loop . c $ listToMaybe =<< DA.decode . L.fromStrict =<< m
 
           handle (SessionPut k v c) = do
             sd <- State.get
             when (sessionId sd == "") newSession
             State.modify f
             loop c
-            where f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k v m } }
+            where f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k encoded m } }
+                  encoded = L.toStrict . DA.encode $ [v]
 
           handle (SessionTtl ttl' c) = do
             t <- ask

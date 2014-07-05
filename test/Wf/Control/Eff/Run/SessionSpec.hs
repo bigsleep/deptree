@@ -20,6 +20,7 @@ import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.ByteString.Lazy as L (ByteString, fromStrict, toStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
+import qualified Data.Aeson as DA (encode)
 import Wf.Data.Serializable (serialize)
 
 import qualified Network.Wai as Wai (Request, defaultRequest, requestHeaders)
@@ -57,8 +58,8 @@ sessionSpec = describe "session" $ do
         let headers = [("Cookie", toByteString . renderCookies $ cookies)]
         let request = Wai.defaultRequest { Wai.requestHeaders = headers }
         let key = "hello"
-        let val = "world"
-        let sval = HM.fromList [(key, val)]
+        let val = ("world", 1, [3]) :: (String, Integer, [Integer])
+        let sval = HM.fromList [(key, L.toStrict . DA.encode $ [val])]
         t <- getCurrentTime
         let expireDate = addSeconds t 10
         let sd = serialize SessionData { sessionValue = sval, sessionStartDate = t, sessionExpireDate = expireDate }

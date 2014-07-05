@@ -17,6 +17,7 @@ import Wf.Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import Control.Exception (SomeException)
 
 import qualified Data.List as L (lookup, head)
+import Data.Maybe (listToMaybe)
 import qualified Data.Map as M (Map, fromList, empty, member, null, elems)
 import qualified Data.HashMap.Strict as HM (fromList, lookup)
 import qualified Data.ByteString as B (ByteString, append)
@@ -24,7 +25,7 @@ import qualified Data.ByteString.Char8 as B (pack, break)
 import qualified Data.ByteString.Lazy as L (ByteString, fromStrict, toStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import qualified Data.Text.Encoding as T (decodeUtf8)
-import qualified Data.Aeson as DA (Value(..), encode)
+import qualified Data.Aeson as DA (Value(..), encode, decode)
 import Data.Either (isLeft)
 import Wf.Data.Serializable (serialize, deserialize)
 import GHC.Exts (sortWith)
@@ -93,13 +94,13 @@ redirectAuthServerSpec =
         f "response_type" params `shouldBe` Just "code"
         f "scope" params `shouldBe` Just (oauth2Scope oauth2)
         f "redirect_uri" params `shouldBe` Just (oauth2RedirectUri oauth2)
-        f "state" params `shouldBe` HM.lookup "state" (sessionValue session)
+        f "state" params `shouldBe` (listToMaybe =<< DA.decode . L.fromStrict =<< HM.lookup "state" (sessionValue session))
 
 
 getAccessTokenSpec :: Spec
 getAccessTokenSpec = describe "get access token" $ do
     let stateToken = "test_state_token_000"
-        sd t = SessionData (HM.fromList [("state", stateToken)]) t t
+        sd t = SessionData (HM.fromList [("state", L.toStrict . DA.encode $ [stateToken])]) t t
         sname = "SID"
         sid = "test_sid"
         sessionStore t = M.fromList [(sid, serialize $ sd t)]
