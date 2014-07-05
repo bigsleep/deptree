@@ -14,6 +14,7 @@ import qualified Wf.Control.Eff.Kvs as Kvs (KeyType)
 import Data.Typeable (Typeable)
 import qualified Data.HashMap.Strict as HM (HashMap, empty)
 import qualified Data.ByteString as B (ByteString)
+import qualified Data.ByteString.Lazy as L (ByteString)
 import Wf.Data.Serializable (Serializable(..))
 import qualified Data.Aeson as DA (encode, decode)
 import qualified Data.Aeson.TH as DA (deriveJSON, defaultOptions)
@@ -27,7 +28,7 @@ data SessionState = SessionState
     } deriving (Show, Typeable)
 
 data SessionData = SessionData
-    { sessionValue :: HM.HashMap B.ByteString B.ByteString
+    { sessionValue :: HM.HashMap B.ByteString L.ByteString
     , sessionStartDate :: T.Time
     , sessionExpireDate :: T.Time
     } deriving (Show, Typeable)

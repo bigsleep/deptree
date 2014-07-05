@@ -94,13 +94,13 @@ redirectAuthServerSpec =
         f "response_type" params `shouldBe` Just "code"
         f "scope" params `shouldBe` Just (oauth2Scope oauth2)
         f "redirect_uri" params `shouldBe` Just (oauth2RedirectUri oauth2)
-        f "state" params `shouldBe` (listToMaybe =<< DA.decode . L.fromStrict =<< HM.lookup "state" (sessionValue session))
+        f "state" params `shouldBe` (listToMaybe =<< DA.decode =<< HM.lookup "state" (sessionValue session))
 
 
 getAccessTokenSpec :: Spec
 getAccessTokenSpec = describe "get access token" $ do
     let stateToken = "test_state_token_000"
-        sd t = SessionData (HM.fromList [("state", L.toStrict . DA.encode $ [stateToken])]) t t
+        sd t = SessionData (HM.fromList [("state", DA.encode $ [stateToken])]) t t
         sname = "SID"
         sid = "test_sid"
         sessionStore t = M.fromList [(sid, serialize $ sd t)]

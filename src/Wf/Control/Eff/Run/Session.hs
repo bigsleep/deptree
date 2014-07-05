@@ -91,7 +91,7 @@ runSession sessionName isSecure ttl eff = do
 
           handle (SessionGet k c) = do
             m <- return . HM.lookup k . sessionValue . sessionData =<< State.get
-            loop . c $ listToMaybe =<< DA.decode . L.fromStrict =<< m
+            loop . c $ listToMaybe =<< DA.decode =<< m
 
           handle (SessionPut k v c) = do
             sd <- State.get
@@ -99,7 +99,7 @@ runSession sessionName isSecure ttl eff = do
             State.modify f
             loop c
             where f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k encoded m } }
-                  encoded = L.toStrict . DA.encode $ [v]
+                  encoded = DA.encode $ [v]
 
           handle (SessionTtl ttl' c) = do
             t <- ask

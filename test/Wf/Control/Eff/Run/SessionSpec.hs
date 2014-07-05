@@ -59,7 +59,7 @@ sessionSpec = describe "session" $ do
         let request = Wai.defaultRequest { Wai.requestHeaders = headers }
         let key = "hello"
         let val = ("world", 1, [3]) :: (String, Integer, [Integer])
-        let sval = HM.fromList [(key, L.toStrict . DA.encode $ [val])]
+        let sval = HM.fromList [(key, DA.encode $ [val])]
         t <- getCurrentTime
         let expireDate = addSeconds t 10
         let sd = serialize SessionData { sessionValue = sval, sessionStartDate = t, sessionExpireDate = expireDate }
