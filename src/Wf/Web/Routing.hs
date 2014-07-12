@@ -6,6 +6,7 @@ module Wf.Web.Routing
 , post
 , parseRoute
 , RouteDefinition(..)
+, Parameter
 ) where
 
 import Control.Monad (msum, when, liftM)
@@ -20,18 +21,18 @@ import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
 type Parameter = (B.ByteString, B.ByteString)
 
 
-routes :: b -> [HTTP.Method -> B.ByteString -> Maybe b] -> HTTP.Method -> B.ByteString -> b
+routes :: a -> [HTTP.Method -> B.ByteString -> Maybe a] -> HTTP.Method -> B.ByteString -> a
 routes defaultApp rs method path = fromMaybe defaultApp (msum . map (\a -> a method path) $ rs)
 
 
-get, post :: (Adaptable a b) => [RoutePattern] -> a -> HTTP.Method -> B.ByteString -> Maybe b
+get, post :: [RoutePattern] -> ([Parameter] -> a) -> HTTP.Method -> B.ByteString -> Maybe a
 get = route . RouteDefinition (RouteMethodSpecific HTTP.methodGet)
 post = route . RouteDefinition (RouteMethodSpecific HTTP.methodPost)
 
 
-route :: (Adaptable a b) => RouteDefinition -> a -> HTTP.Method -> B.ByteString -> Maybe b
+route :: RouteDefinition -> ([Parameter] -> a) -> HTTP.Method -> B.ByteString -> Maybe a
 route definition app requestMethod requestPath =
-    liftM (adapt app) $ matchRouteDefinition definition requestMethod requestPath
+    liftM app $ matchRouteDefinition definition requestMethod requestPath
 
 
 data RoutePattern =
@@ -92,16 +93,6 @@ routePatternFromString :: String -> RoutePattern
 routePatternFromString ":" = error "invalid route parameter pattern"
 routePatternFromString (':' : s) = RouteParameter $ B.pack s
 routePatternFromString s = RoutePath $ B.pack s
-
-
-class Adaptable a b where
-    adapt :: a -> [Parameter] -> b
-
-instance Adaptable a a where
-    adapt = const
-
-instance Adaptable ([Parameter] -> a) a where
-    adapt = ($)
 
 
 instance IsString [RoutePattern] where

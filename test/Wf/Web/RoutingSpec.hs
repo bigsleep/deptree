@@ -26,10 +26,10 @@ routingSpec = describe "routes" $
 
 myapp :: HTTP.Method -> B.ByteString -> Maybe B.ByteString
 myapp = R.routes Nothing
-    [ R.get "/" (return "root" :: Maybe B.ByteString)
-    , R.get "/news" (return "news" :: Maybe B.ByteString)
+    [ R.get "/" . const $ Just "root"
+    , R.get "/news" . const $ Just "news"
     , R.get "/blog/:year/:month/:day" blog
-    , R.post "/user/register" (return "register" :: Maybe B.ByteString)
+    , R.post "/user/register" . const $ Just "register"
     ]
 
 blog :: [(B.ByteString, B.ByteString)] -> Maybe B.ByteString
