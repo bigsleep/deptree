@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Wf.Network.Http.Response
-( Response(..)
+( Response
 , setStatus
 , addHeader
 , setHeaders

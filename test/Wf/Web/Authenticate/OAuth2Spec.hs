@@ -42,7 +42,7 @@ import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
 import Wf.Control.Eff.Run.Session (runSession)
-import Wf.Network.Http.Response (Response(..))
+import Wf.Network.Http.Types (Response(..))
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import qualified Test.Hspec.QuickCheck as Q
