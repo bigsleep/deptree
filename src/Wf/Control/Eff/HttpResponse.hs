@@ -1,56 +1,42 @@
-{-# LANGUAGE FlexibleContexts, DeriveFunctor, DeriveDataTypeable, TypeFamilies #-}
+{-# LANGUAGE FlexibleContexts, DeriveFunctor, DeriveDataTypeable #-}
 module Wf.Control.Eff.HttpResponse
-( setStatus
+( putResponse
+, setStatus
 , addHeader
-, setHeader
+, setHeaders
 , setBody
 , redirect
 , HttpResponse(..)
-, ResponseBody(..)
-, Response(..)
 ) where
 
 import Control.Eff (Eff, Member, send, inj)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
-import qualified Blaze.ByteString.Builder as Blaze (Builder)
-import qualified Network.HTTP.Types as HTTP (Header, Status)
-import qualified Network.Wai as Wai (StreamingBody)
+import Wf.Network.Http.Types (Response(..), ResponseStatus, ResponseHeader, ResponseBodyType)
 
-type ResponseStatus = HTTP.Status
-
-type ResponseHeader = HTTP.Header
-
-data ResponseBody =
-    ResponseBodyBuilder Blaze.Builder |
-    ResponseBodyFile FilePath |
-    ResponseBodyStream Wai.StreamingBody
-
-data Response = Response
-    { responseStatus :: ResponseStatus
-    , responseHeaders :: [ResponseHeader]
-    , responseBody :: ResponseBody
-    } deriving (Typeable)
-
-data HttpResponse a =
-    HttpResponseSetStatus ResponseStatus a |
-    HttpResponseAddHeader ResponseHeader a |
-    HttpResponseSetHeaders [ResponseHeader] a |
-    HttpResponseSetBody ResponseBody a |
-    HttpResponseRedirect B.ByteString a
+data HttpResponse tag a =
+    HttpResponsePutResponse tag (Response tag) |
+    HttpResponseSetStatus tag ResponseStatus a |
+    HttpResponseAddHeader tag ResponseHeader a |
+    HttpResponseSetHeaders tag [ResponseHeader] a |
+    HttpResponseSetBody tag (ResponseBodyType tag) a |
+    HttpResponseRedirect tag B.ByteString
     deriving (Functor, Typeable)
 
-setStatus :: (Member HttpResponse r) => ResponseStatus -> Eff r ()
-setStatus s = send $ \f -> inj $ HttpResponseSetStatus s $ f ()
+putResponse :: (Typeable tag, Member (HttpResponse tag) r) => tag -> Response tag -> Eff r ()
+putResponse tag response = send $ const . inj $ HttpResponsePutResponse tag response
 
-addHeader :: (Member HttpResponse r) => ResponseHeader -> Eff r ()
-addHeader h = send $ \f -> inj $ HttpResponseAddHeader h $ f ()
+setStatus :: (Typeable tag, Member (HttpResponse tag) r) => tag -> ResponseStatus -> Eff r ()
+setStatus tag s = send $ \f -> inj $ HttpResponseSetStatus tag s $ f ()
 
-setHeader :: (Member HttpResponse r) => [ResponseHeader] -> Eff r ()
-setHeader hs = send $ \f -> inj $ HttpResponseSetHeaders hs $ f ()
+addHeader :: (Typeable tag, Member (HttpResponse tag) r) => tag -> ResponseHeader -> Eff r ()
+addHeader tag h = send $ \f -> inj $ HttpResponseAddHeader tag h $ f ()
 
-setBody :: (Member HttpResponse r) => ResponseBody -> Eff r ()
-setBody body = send $ \f -> inj $ HttpResponseSetBody body $ f ()
+setHeaders :: (Typeable tag, Member (HttpResponse tag) r) => tag -> [ResponseHeader] -> Eff r ()
+setHeaders tag hs = send $ \f -> inj $ HttpResponseSetHeaders tag hs $ f ()
 
-redirect :: (Member HttpResponse r) => B.ByteString -> Eff r ()
-redirect uri = send $ \f -> inj $ HttpResponseRedirect uri $ f ()
+setBody :: (Typeable tag, Member (HttpResponse tag) r) => tag -> ResponseBodyType tag -> Eff r ()
+setBody tag body = send $ \f -> inj $ HttpResponseSetBody tag body $ f ()
+
+redirect :: (Typeable tag, Member (HttpResponse tag) r) => tag -> B.ByteString -> Eff r ()
+redirect tag uri = send $ const . inj $ HttpResponseRedirect tag uri

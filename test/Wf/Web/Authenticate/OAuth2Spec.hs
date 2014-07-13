@@ -1,11 +1,11 @@
-{-# LANGUAGE OverloadedStrings, TypeOperators, FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings, TypeOperators, DeriveDataTypeable, FlexibleContexts #-}
 module Wf.Web.Authenticate.OAuth2Spec
 ( oauth2Spec
 ) where
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Wf.Control.Eff.HttpClient (HttpClient(..), httpClient, runHttpClientMock)
-import Wf.Control.Eff.HttpResponse (HttpResponse(..), Response(..))
+import Wf.Control.Eff.HttpResponse (HttpResponse(..))
 import Wf.Control.Eff.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId)
 import qualified Wf.Control.Eff.Kvs as Kvs (Kvs(..), get)
 import Control.Eff.Lift (Lift, runLift)
@@ -27,6 +27,7 @@ import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import qualified Data.Text.Encoding as T (decodeUtf8)
 import qualified Data.Aeson as DA (Value(..), encode, decode)
 import Data.Either (isLeft)
+import Data.Typeable (Typeable)
 import Wf.Data.Serializable (serialize, deserialize)
 import GHC.Exts (sortWith)
 
@@ -37,6 +38,7 @@ import qualified Network.HTTP.Types as HTTP (status200, status302, status403, st
 import Blaze.ByteString.Builder (toByteString)
 import Wf.Web.Authenticate.OAuth2
 
+import Wf.Network.Http.Types (Response(..))
 import Wf.Application.Logger (Logger, logDebug)
 import Wf.Application.Exception (Exception(..))
 import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
@@ -49,7 +51,7 @@ import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
 import qualified Test.Hspec.QuickCheck as Q
 import qualified Test.QuickCheck.Property as Q
 
-oauth2TestSetting :: OAuth2 u m
+oauth2TestSetting :: OAuth2 u ResponseTag m
 oauth2TestSetting = OAuth2
     { oauth2AuthorizationServerName = "test"
     , oauth2AuthorizationUri = "https://test.com/authorization"
@@ -58,6 +60,7 @@ oauth2TestSetting = OAuth2
     , oauth2ClientSecret = "test_client_secret"
     , oauth2RedirectUri = "https://test.client.com/redirect"
     , oauth2Scope = "openid email"
+    , oauth2ResponseTag = ResponseTag
     }
 
 defaultClientResponse :: N.Response L.ByteString
@@ -73,18 +76,20 @@ oauth2Spec = describe "oauth2" $ do
     getAccessTokenSpec
 
 
+data ResponseTag = ResponseTag deriving (Show, Typeable)
+
+
 redirectAuthServerSpec :: Spec
 redirectAuthServerSpec =
     it "redirect to authorization server" $ do
         let oauth2 = oauth2TestSetting
-            code = redirectToAuthorizationServer oauth2 >> get
+            code = redirectToAuthorizationServer oauth2
         t <- getCurrentTime
 
-        Right (m, res) <- runTest "SID" M.empty Wai.defaultRequest (const defaultClientResponse) t code
+        Right (_, res) <- runTest "SID" M.empty Wai.defaultRequest (const defaultClientResponse) t code
 
         let Just (redirectUri, paramsStr) = L.lookup "Location" (responseHeaders res) >>= return . B.break (== '?')
         let params = HTTP.parseQuery paramsStr
-        let Just session = deserialize . L.head . M.elems $ m
 
         responseStatus res `shouldBe` HTTP.status302
         redirectUri `shouldBe` oauth2AuthorizationUri oauth2
@@ -94,7 +99,6 @@ redirectAuthServerSpec =
         f "response_type" params `shouldBe` Just "code"
         f "scope" params `shouldBe` Just (oauth2Scope oauth2)
         f "redirect_uri" params `shouldBe` Just (oauth2RedirectUri oauth2)
-        f "state" params `shouldBe` (listToMaybe =<< DA.decode =<< HM.lookup "state" (sessionValue session))
 
 
 getAccessTokenSpec :: Spec
@@ -114,7 +118,7 @@ getAccessTokenSpec = describe "get access token" $ do
 
     it "success with a right code and a state token" $ do
         t <-  getCurrentTime
-        Right (_, result) <- run (addSeconds t 1) t request $ getAccessToken oauth2 code stateToken
+        Right (Just result, _) <- run (addSeconds t 1) t request $ getAccessToken oauth2 code stateToken
         result `shouldBe` accessToken
 
     it "fail with wrong code" $ do
@@ -149,15 +153,15 @@ runTest ::
         :> Kvs.Kvs SessionKvs
         :> State (M.Map B.ByteString L.ByteString)
         :> State SessionState
-        :> HttpResponse
-        :> State Response
+        :> HttpResponse ResponseTag
+        :> State (Response ResponseTag)
         :> Exception
         :> Reader Wai.Request
         :> Reader Time
         :> Logger
         :> Lift IO
         :> ()) a ->
-    IO (Either SomeException (M.Map B.ByteString L.ByteString, a))
+    IO (Either SomeException (Maybe a, Response ResponseTag))
 runTest name s request cresponse t =
       runLift
     . runLoggerStdIO DEBUG
@@ -167,13 +171,13 @@ runTest name s request cresponse t =
     . evalState (Response {})
     . runHttpResponse
     . evalState defaultSessionState
-    . runState s
+    . evalState s
     . runKvsMap
     . runSession name False 0
     . runHttpClientMock cresponse
 
 
-authServer :: OAuth2 u m -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
+authServer :: OAuth2 u tag m -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
 authServer oauth2 code accessToken request =
     if params == expected
         then successResponse
@@ -195,7 +199,7 @@ authServer oauth2 code accessToken request =
           errorResponse = defaultClientResponse { N.responseStatus = HTTP.status403 }
 
 
-tokenInfoServer :: OAuth2 u m -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
+tokenInfoServer :: OAuth2 u tag m -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
 tokenInfoServer oauth2 accessToken tokenInfo request =
     if requestAccessToken == Just ("OAuth " `B.append` accessToken)
         then successResponse

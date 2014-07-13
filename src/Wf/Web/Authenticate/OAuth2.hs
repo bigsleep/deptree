@@ -29,7 +29,7 @@ import System.Random (newStdGen, randomRs)
 import Wf.Application.Exception (Exception, throwException)
 import Wf.Application.Logger (Logger)
 
-data OAuth2 user m = OAuth2
+data OAuth2 user responseTag m = OAuth2
     { oauth2AuthorizationServerName :: B.ByteString
     , oauth2AuthorizationUri :: B.ByteString
     , oauth2TokenUri :: B.ByteString
@@ -38,6 +38,7 @@ data OAuth2 user m = OAuth2
     , oauth2RedirectUri :: B.ByteString
     , oauth2Scope :: B.ByteString
     , oauth2Authenticate :: B.ByteString -> m user
+    , oauth2ResponseTag :: responseTag
     } deriving (Typeable)
 
 
@@ -47,11 +48,12 @@ instance Control.Exception.Exception OAuth2Error
 
 
 redirectToAuthorizationServer
-    :: ( Member Session.Session r
-       , Member HttpResponse r
+    :: ( Typeable responseTag
+       , Member Session.Session r
+       , Member (HttpResponse responseTag) r
        , SetMember Lift (Lift IO) r
        )
-    => OAuth2 u m -> Eff r ()
+    => OAuth2 u responseTag m -> Eff r ()
 redirectToAuthorizationServer oauth2 = do
     g <- lift newStdGen
     let state = B.pack . take stateLen . map (chars !!) . randomRs (0, length chars - 1) $ g
@@ -65,8 +67,9 @@ redirectToAuthorizationServer oauth2 = do
                  , ("state", Just state)
                  ]
         url = oauth2AuthorizationUri oauth2 `B.append` HTTP.renderQuery True params
-    addHeader setCookie
-    redirect url
+        tag = oauth2ResponseTag oauth2
+    addHeader tag setCookie
+    redirect tag url
     where
     stateLen = 40
     chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
@@ -74,7 +77,7 @@ redirectToAuthorizationServer oauth2 = do
 
 getAccessToken
     :: (Member HttpClient r, Member Exception r, Member Session.Session r)
-    => OAuth2 u m -> B.ByteString -> B.ByteString -> Eff r B.ByteString
+    => OAuth2 u tag m -> B.ByteString -> B.ByteString -> Eff r B.ByteString
 getAccessToken oauth2 code state = do
     let params = [ ("code", Just code)
                  , ("redirect_uri", Just $ oauth2RedirectUri oauth2)
