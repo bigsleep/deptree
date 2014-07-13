@@ -8,7 +8,6 @@ module Wf.Web.Authenticate.OAuth2
 import Control.Eff (Eff, Member, SetMember)
 import Control.Eff.Lift (Lift, lift)
 import Wf.Control.Eff.HttpClient (HttpClient, httpClient)
-import Wf.Control.Eff.HttpResponse (HttpResponse, addHeader, redirect)
 import qualified Wf.Control.Eff.Session as Session (Session, sput, sget, sttl, renderSetCookie)
 import qualified Control.Exception (Exception)
 import Control.Monad (unless)
@@ -26,10 +25,11 @@ import qualified Network.HTTP.Types as HTTP (methodPost, renderQuery, status200)
 
 import System.Random (newStdGen, randomRs)
 
+import Wf.Network.Http.Response (Response, addHeader, redirect)
 import Wf.Application.Exception (Exception, throwException)
 import Wf.Application.Logger (Logger)
 
-data OAuth2 user responseTag m = OAuth2
+data OAuth2 user m = OAuth2
     { oauth2AuthorizationServerName :: B.ByteString
     , oauth2AuthorizationUri :: B.ByteString
     , oauth2TokenUri :: B.ByteString
@@ -38,7 +38,6 @@ data OAuth2 user responseTag m = OAuth2
     , oauth2RedirectUri :: B.ByteString
     , oauth2Scope :: B.ByteString
     , oauth2Authenticate :: B.ByteString -> m user
-    , oauth2ResponseTag :: responseTag
     } deriving (Typeable)
 
 
@@ -48,13 +47,11 @@ instance Control.Exception.Exception OAuth2Error
 
 
 redirectToAuthorizationServer
-    :: ( Typeable responseTag
-       , Member Session.Session r
-       , Member (HttpResponse responseTag) r
+    :: ( Member Session.Session r
        , SetMember Lift (Lift IO) r
        )
-    => OAuth2 u responseTag m -> Eff r ()
-redirectToAuthorizationServer oauth2 = do
+    => OAuth2 u m -> Response body -> Eff r (Response body)
+redirectToAuthorizationServer oauth2 response = do
     g <- lift newStdGen
     let state = B.pack . take stateLen . map (chars !!) . randomRs (0, length chars - 1) $ g
     Session.sput "state" state
@@ -67,9 +64,7 @@ redirectToAuthorizationServer oauth2 = do
                  , ("state", Just state)
                  ]
         url = oauth2AuthorizationUri oauth2 `B.append` HTTP.renderQuery True params
-        tag = oauth2ResponseTag oauth2
-    addHeader tag setCookie
-    redirect tag url
+    return . redirect url . addHeader setCookie $ response
     where
     stateLen = 40
     chars = ['0' .. '9'] ++ ['a' .. 'z'] ++ ['A' .. 'Z']
@@ -77,7 +72,7 @@ redirectToAuthorizationServer oauth2 = do
 
 getAccessToken
     :: (Member HttpClient r, Member Exception r, Member Session.Session r)
-    => OAuth2 u tag m -> B.ByteString -> B.ByteString -> Eff r B.ByteString
+    => OAuth2 u m -> B.ByteString -> B.ByteString -> Eff r B.ByteString
 getAccessToken oauth2 code state = do
     let params = [ ("code", Just code)
                  , ("redirect_uri", Just $ oauth2RedirectUri oauth2)
