@@ -4,7 +4,6 @@ module Wf.Control.Eff.Run.SessionSpec
 ) where
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
-import Wf.Control.Eff.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId)
 import qualified Wf.Control.Eff.Kvs as Kvs (Kvs(..), get)
 import Control.Eff.Lift (Lift, runLift)
 import Control.Eff.Exception (Exc, runExc, throwExc)
@@ -30,8 +29,7 @@ import Blaze.ByteString.Builder (toByteString)
 import Wf.Application.Logger (Logger, logDebug)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Application.Exception (Exception(..))
-import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
-import Wf.Control.Eff.Run.Session (runSession)
+import Wf.Web.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId, runSession, SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
 import Wf.Application.Time (Time, getCurrentTime, addSeconds)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)

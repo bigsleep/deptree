@@ -1,4 +1,4 @@
-module Wf.Network.Http.Response
+module Wf.Network.Http.Request
 ( Request(..)
 , HttpVersion
 , RequestMethod

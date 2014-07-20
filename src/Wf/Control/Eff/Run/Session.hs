@@ -28,7 +28,7 @@ import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCo
 import System.Random (newStdGen, randomRs)
 import Text.Printf.TH (s)
 
-import Wf.Web.Session (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
+import Wf.Web.Session.Types (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
 import Wf.Application.Exception (Exception)
 import Wf.Application.Logger (Logger, logDebug, logInfo, logError)
 import qualified Wf.Application.Time as T (Time, formatTime, addSeconds, diffTime)
