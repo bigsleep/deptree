@@ -2,7 +2,6 @@
 module Wf.Web.Api
 ( apiRoutes
 , ApiDefinition(..)
-, ApiT(..)
 , ApiInfo(..)
 , getParameter
 ) where
@@ -14,12 +13,10 @@ import Data.Reflection (Given, give, given)
 import qualified Wf.Web.Routing as R (RouteDefinition, Parameter, route, routes)
 import qualified Network.HTTP.Types as HTTP (Method)
 
-data ApiDefinition request response i o m = ApiDefinition
+data ApiDefinition request response m = ApiDefinition
     { apiName :: String
     , apiRouteDefinition :: R.RouteDefinition
-    , apiRequestParser :: request -> m i
-    , apiResponseRenderer :: o -> m response
-    , apiImplement :: (Given ApiInfo) => i -> m o
+    , apiImplement :: (Given ApiInfo) => request -> m response
     , apiBefore :: m ()
     , apiAfter :: m ()
     } deriving (Typeable)
@@ -30,21 +27,17 @@ data ApiInfo = ApiInfo
     , apiInfoParameters :: [R.Parameter]
     } deriving (Typeable)
 
-newtype ApiT request response m = ApiT { unApiT :: forall i o. ApiDefinition request response i o m }
-
-apiRoutes :: (Monad m) => m response -> [ApiT request response m] -> request -> HTTP.Method -> B.ByteString -> m response
+apiRoutes :: (Monad m) => m response -> [ApiDefinition request response m] -> request -> HTTP.Method -> B.ByteString -> m response
 apiRoutes defaultApp apis request = R.routes defaultApp (map entry apis)
     where
-    entry (ApiT api) = R.route (apiRouteDefinition api) (exec api)
+    entry api = R.route (apiRouteDefinition api) (exec api)
     exec api parameters = do
         apiBefore api
         let apiInfo = ApiInfo { apiInfoApiName = apiName api
                               , apiInfoRouteDefinition = apiRouteDefinition api
                               , apiInfoParameters = parameters
                               }
-        i <- apiRequestParser api request
-        o <- give apiInfo $ apiImplement api i
-        r <- apiResponseRenderer api o
+        r <- give apiInfo $ apiImplement api request
         apiAfter api
         return r
 

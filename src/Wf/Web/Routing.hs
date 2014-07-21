@@ -5,15 +5,18 @@ module Wf.Web.Routing
 , get
 , post
 , parseRoute
+, routePatternsToString
+, RouteMethod(..)
 , RouteDefinition(..)
+, RoutePattern(..)
 , Parameter
 ) where
 
 import Control.Monad (msum, when, liftM)
 import Data.Maybe (fromMaybe)
 import qualified Data.ByteString as B (ByteString, empty)
-import qualified Data.ByteString.Char8 as B (head, split, pack)
-import qualified Data.List as L (break)
+import qualified Data.ByteString.Char8 as B (head, split, pack, unpack)
+import qualified Data.List as L (break, intercalate)
 import Data.String (IsString(..))
 import Data.Typeable (Typeable)
 import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
@@ -93,6 +96,15 @@ routePatternFromString :: String -> RoutePattern
 routePatternFromString ":" = error "invalid route parameter pattern"
 routePatternFromString (':' : s) = RouteParameter $ B.pack s
 routePatternFromString s = RoutePath $ B.pack s
+
+
+routePatternToString :: RoutePattern -> String
+routePatternToString (RoutePath s) = B.unpack s
+routePatternToString (RouteParameter s) = ':' : B.unpack s
+
+
+routePatternsToString :: [RoutePattern] -> String
+routePatternsToString = L.intercalate "/" . map routePatternToString
 
 
 instance IsString [RoutePattern] where

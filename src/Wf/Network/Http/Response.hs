@@ -21,7 +21,7 @@ addHeader h res = res { responseHeaders = h : responseHeaders res }
 setHeaders :: [ResponseHeader] -> Response body -> Response body
 setHeaders hs res = res { responseHeaders = hs }
 
-setBody :: body -> Response body -> Response body
+setBody :: body -> Response a -> Response body
 setBody body res = res { responseBody = body }
 
 redirect :: B.ByteString -> Response body -> Response body
