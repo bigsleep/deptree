@@ -31,36 +31,46 @@ import GHC.Exts (sortWith)
 
 import qualified Network.Wai as Wai (Request, Response, defaultRequest, requestHeaders, responseLBS, responseStatus, responseHeaders)
 import Web.Cookie (SetCookie, renderCookies)
-import qualified Network.HTTP.Client.Internal as N (Request(..), Response(..), RequestBody(..))
+import qualified Network.HTTP.Client.Internal as N (Request(..), Response(..), RequestBody(..), CookieJar(..), ResponseClose(..))
 import qualified Network.HTTP.Types as HTTP (status200, status302, status403, status501, http10, parseQuery, parseSimpleQuery, hCookie)
 import Blaze.ByteString.Builder (toByteString)
-import Wf.Web.Authenticate.OAuth2
 
+import Wf.Web.Authenticate.OAuth2
 import Wf.Application.Logger (Logger, logDebug)
 import Wf.Application.Exception (Exception(..))
 import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
-import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData, getRequestSessionId)
+import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), SessionSettings(..), defaultSessionState, defaultSessionData, getRequestSessionId)
 import Wf.Control.Eff.Run.Session (runSession)
 import Wf.Network.Http.Types (Response(..))
 
-import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
+import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, expectationFailure)
 import qualified Test.Hspec.QuickCheck as Q
 import qualified Test.QuickCheck.Property as Q
 
-oauth2TestSetting :: OAuth2 u m
+oauth2TestSetting :: OAuth2 u
 oauth2TestSetting = OAuth2
-    { oauth2AuthorizationServerName = "test"
-    , oauth2AuthorizationUri = "https://test.com/authorization"
-    , oauth2TokenUri = "https://test.com/token"
-    , oauth2ClientId = "test_client_id"
-    , oauth2ClientSecret = "test_client_secret"
-    , oauth2RedirectUri = "https://test.client.com/redirect"
-    , oauth2Scope = "openid email"
+    { oauth2Config = OAuth2Config
+        { oauth2AuthorizationServerName = "test"
+        , oauth2AuthorizationUri = "https://test.com/authorization"
+        , oauth2TokenUri = "https://test.com/token"
+        , oauth2UserInfoUri = "https://test.com/token"
+        , oauth2ClientId = "test_client_id"
+        , oauth2ClientSecret = "test_client_secret"
+        , oauth2RedirectUri = "https://test.client.com/redirect"
+        , oauth2Scope = "openid email"
+        }
     }
 
 defaultClientResponse :: N.Response L.ByteString
-defaultClientResponse = N.Response {}
+defaultClientResponse = N.Response
+    { N.responseStatus = HTTP.status200
+    , N.responseVersion = HTTP.http10
+    , N.responseHeaders = []
+    , N.responseBody = ""
+    , N.responseCookieJar = N.CJ []
+    , N.responseClose' = N.ResponseClose (return ())
+    }
 
 defaultServerResponse :: Wai.Response
 defaultServerResponse = Wai.responseLBS HTTP.status501 [] ""
@@ -70,6 +80,7 @@ oauth2Spec :: Spec
 oauth2Spec = describe "oauth2" $ do
     redirectAuthServerSpec
     getAccessTokenSpec
+    getUserInfoSpec
 
 
 redirectAuthServerSpec :: Spec
@@ -86,13 +97,13 @@ redirectAuthServerSpec =
         let Just session = deserialize . L.head . M.elems $ m
 
         responseStatus res `shouldBe` HTTP.status302
-        redirectUri `shouldBe` oauth2AuthorizationUri oauth2
+        redirectUri `shouldBe` oauth2AuthorizationUri (oauth2Config oauth2)
 
         let f name ps = L.lookup name ps >>= id
-        f "client_id" params `shouldBe` Just (oauth2ClientId oauth2)
+        f "client_id" params `shouldBe` Just (oauth2ClientId . oauth2Config $ oauth2)
         f "response_type" params `shouldBe` Just "code"
-        f "scope" params `shouldBe` Just (oauth2Scope oauth2)
-        f "redirect_uri" params `shouldBe` Just (oauth2RedirectUri oauth2)
+        f "scope" params `shouldBe` Just (oauth2Scope . oauth2Config $ oauth2)
+        f "redirect_uri" params `shouldBe` Just (oauth2RedirectUri . oauth2Config $ oauth2)
         f "state" params `shouldBe` (listToMaybe =<< DA.decode =<< HM.lookup "state" (sessionValue session))
 
 
@@ -113,8 +124,10 @@ getAccessTokenSpec = describe "get access token" $ do
 
     it "success with a right code and a state token" $ do
         t <-  getCurrentTime
-        Right (_, result) <- run (addSeconds t 1) t request $ getAccessToken oauth2 code stateToken
-        result `shouldBe` accessToken
+        r <- run (addSeconds t 1) t request $ getAccessToken oauth2 code stateToken
+        case r of
+             Right (_, result) -> result `shouldBe` accessToken
+             Left e -> expectationFailure . show $ e
 
     it "fail with wrong code" $ do
         t <- getCurrentTime
@@ -135,6 +148,23 @@ getAccessTokenSpec = describe "get access token" $ do
         t <- getCurrentTime
         r <- run (addSeconds t 1) t Wai.defaultRequest $ getAccessToken oauth2 code "wrong_state"
         shouldSatisfy r isLeft
+
+
+getUserInfoSpec :: Spec
+getUserInfoSpec = describe "get token info" $ do
+    let accessToken = "test_access_token_xxx"
+        oauth2 = oauth2TestSetting { oauth2UserParser = DA.decode }
+        uinfo = DA.Object . HM.fromList $ [("access_token", DA.String . T.decodeUtf8 $ accessToken), ("id", DA.String "userId0001"), ("email", DA.String "aaa@bbb.com")]
+        run = runTest "SID" M.empty Wai.defaultRequest (userInfoServer oauth2 accessToken uinfo) mjd
+
+    it "success with a right access token" $ do
+        let handleResult (Right (_, result)) = result `shouldBe` uinfo
+            handleResult (Left err) = print err
+        handleResult =<< (run $ getUserInfo oauth2 accessToken)
+
+    it "fail with a wrong access token" $ do
+        e <- run $ getUserInfo oauth2 (accessToken `B.append` "'")
+        shouldSatisfy e isLeft
 
 
 runTest ::
@@ -160,24 +190,27 @@ runTest name s request cresponse t =
     . evalState defaultSessionState
     . runState s
     . runKvsMap
-    . runSession name t (getRequestSessionId name . Wai.requestHeaders $ request) False 0
+    . runSession ssettings t (getRequestSessionId name . Wai.requestHeaders $ request)
     . runHttpClientMock cresponse
 
+    where
+    ssettings = SessionSettings name False 0
 
-authServer :: OAuth2 u m -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
+
+authServer :: OAuth2 u -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString
 authServer oauth2 code accessToken request =
     if params == expected
         then successResponse
         else errorResponse
     where expected = sortWith fst
                    [ ("code", code)
-                   , ("client_id", oauth2ClientId oauth2)
-                   , ("client_secret", oauth2ClientSecret oauth2)
-                   , ("redirect_uri", oauth2RedirectUri oauth2)
+                   , ("client_id", oauth2ClientId . oauth2Config $ oauth2)
+                   , ("client_secret", oauth2ClientSecret . oauth2Config $ oauth2)
+                   , ("redirect_uri", oauth2RedirectUri . oauth2Config $ oauth2)
                    , ("grant_type", "authorization_code")
                    ]
           params = case N.requestBody request of
-                        N.RequestBodyBS body -> sortWith fst . HTTP.parseSimpleQuery $ body
+                        N.RequestBodyLBS body -> sortWith fst . HTTP.parseSimpleQuery . L.toStrict $ body
                         _ -> []
           successResponse = defaultClientResponse
                           { N.responseStatus = HTTP.status200
@@ -186,15 +219,19 @@ authServer oauth2 code accessToken request =
           errorResponse = defaultClientResponse { N.responseStatus = HTTP.status403 }
 
 
-tokenInfoServer :: OAuth2 u m -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
-tokenInfoServer oauth2 accessToken tokenInfo request =
+userInfoServer :: OAuth2 u -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
+userInfoServer oauth2 accessToken userInfo request =
     if requestAccessToken == Just ("OAuth " `B.append` accessToken)
         then successResponse
         else errorResponse
     where requestAccessToken = L.lookup "Authorization" $ N.requestHeaders request
           successResponse = defaultClientResponse
                           { N.responseStatus = HTTP.status200
-                          , N.responseBody = DA.encode tokenInfo
+                          , N.responseVersion = HTTP.http10
+                          , N.responseBody = DA.encode userInfo
                           }
           errorResponse = defaultClientResponse { N.responseStatus = HTTP.status403 }
+
+
+
 

@@ -6,11 +6,12 @@ module Wf.Network.Http.Response
 , setHeaders
 , setBody
 , redirect
+, defaultResponse
 ) where
 
 import qualified Data.ByteString as B (ByteString)
 import qualified Network.HTTP.Types as HTTP (status302)
-import Wf.Network.Http.Types (Response(..), ResponseStatus, ResponseHeader)
+import Wf.Network.Http.Types (Response(..), ResponseStatus, ResponseHeader, defaultResponse)
 
 setStatus :: ResponseStatus -> Response body -> Response body
 setStatus s res = res { responseStatus = s }

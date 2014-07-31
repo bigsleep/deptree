@@ -48,7 +48,8 @@ library
                         http-client >=0.3 && <0.4,
                         http-types >=0.8 && <0.9,
                         blaze-builder >=0.3 && <0.4,
-                        wai >=3.0 && <3.1,
+                        wai >=3.0.1 && <3.1,
+                        network,
                         cookie >=0.4 && <0.5,
                         random >=1.0 && <1.1,
                         th-printf >=0.3 && <0.4,
@@ -75,7 +76,8 @@ test-suite spec
                         http-client >=0.3 && <0.4,
                         http-types >=0.8 && <0.9,
                         blaze-builder >=0.3 && <0.4,
-                        wai >=3.0 && <3.1,
+                        wai >=3.0.1 && <3.1,
+                        network,
                         cookie >=0.4 && <0.5,
                         random >=1.0 && <1.1,
                         th-printf >=0.3 && <0.4,
@@ -102,7 +104,33 @@ executable session-example1
                         http-client >=0.3 && <0.4,
                         http-types >=0.8 && <0.9,
                         blaze-builder >=0.3 && <0.4,
-                        wai >=3.0 && <3.1,
+                        wai >=3.0.1 && <3.1,
+                        network,
+                        cookie >=0.4 && <0.5,
+                        random >=1.0 && <1.1,
+                        th-printf >=0.3 && <0.4,
+                        containers >=0.5 && <0.6,
+                        hedis >=0.6 && <0.7,
+                        text >=1.1 && <1.2,
+                        time >=1.4 && <1.5,
+                        old-locale >=1.0 && <1.1,
+                        reflection
+  default-language:     Haskell2010
+
+executable oauth2-example
+  hs-source-dirs:       oauth2-example, src
+  main-is:              OAuth2Example.hs
+  build-depends:        base >=4.7 && <4.8,
+                        extensible-effects >=1.4 && <1.5,
+                        aeson >=0.6 && <0.7,
+                        unordered-containers >=0.2 && <0.3,
+                        bytestring >=0.10 && <0.11,
+                        http-client >=0.3 && <0.4,
+                        http-client-tls,
+                        http-types >=0.8 && <0.9,
+                        blaze-builder >=0.3 && <0.4,
+                        wai >=3.0.1 && <3.1,
+                        network,
                         cookie >=0.4 && <0.5,
                         random >=1.0 && <1.1,
                         th-printf >=0.3 && <0.4,
@@ -112,7 +140,6 @@ executable session-example1
                         time >=1.4 && <1.5,
                         old-locale >=1.0 && <1.1,
                         reflection,
-                        hspec >=1.9 && <1.10,
-                        QuickCheck >=2.7 && <2.8
-
+                        warp,
+                        wf
   default-language:     Haskell2010

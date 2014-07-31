@@ -2,10 +2,12 @@
 module Wf.Web.Session.Types
 ( SessionState(..)
 , SessionData(..)
+, SessionSettings(..)
 , SessionKvs(..)
 , SessionError(..)
 , defaultSessionState
 , defaultSessionData
+, defaultSessionSettings
 ) where
 
 import qualified Control.Exception (Exception(..))
@@ -33,14 +35,24 @@ data SessionData = SessionData
     , sessionExpireDate :: T.Time
     } deriving (Show, Typeable)
 
+data SessionSettings = SessionSettings
+    { sessionName :: B.ByteString
+    , sessionIsSecure :: Bool
+    , sessionTtl :: Integer
+    } deriving (Show, Typeable)
+
 DA.deriveJSON DA.defaultOptions ''SessionData
 DA.deriveJSON DA.defaultOptions ''SessionState
+DA.deriveJSON DA.defaultOptions ''SessionSettings
 
 defaultSessionState :: SessionState
 defaultSessionState = SessionState "" defaultSessionData False
 
 defaultSessionData :: SessionData
 defaultSessionData = SessionData HM.empty T.mjd T.mjd
+
+defaultSessionSettings :: SessionSettings
+defaultSessionSettings = SessionSettings "SID" False 3600
 
 data SessionKvs = SessionKvs deriving (Typeable)
 

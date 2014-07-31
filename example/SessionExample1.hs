@@ -11,7 +11,7 @@ import Control.Exception (SomeException)
 import Wf.Control.Eff.Kvs (Kvs)
 import Wf.Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
-import Wf.Web.Session (Session, sget, sput, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, getRequestSessionId)
+import Wf.Web.Session (Session, sget, sput, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, getRequestSessionId, SessionSettings(..))
 import Wf.Application.Time (Time, getCurrentTime)
 import Wf.Application.Exception (Exception)
 import Wf.Application.Logger (Logger, logDebug)
@@ -26,8 +26,8 @@ import qualified Data.ByteString.Lazy as L (ByteString, append)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import qualified Data.ByteString.Char8 as B (pack, unpack)
 
-sessionName :: B.ByteString
-sessionName = "SID"
+sname :: B.ByteString
+sname = "SID"
 
 app :: (Member Session r, Member Logger r) => Wai.Request -> Eff r Wai.Response
 app req = do
@@ -55,7 +55,7 @@ main = do
     where
     errorResponse = Wai.responseLBS HTTP.status500 [] ""
     server request respond = do
-        let requestSessionId = getRequestSessionId sessionName . Wai.requestHeaders $ request
+        let requestSessionId = getRequestSessionId sname . Wai.requestHeaders $ request
         r <- run (app request) requestSessionId
         case r of
              Right res -> respond res
@@ -76,9 +76,10 @@ run ::
     IO (Either SomeException Wai.Response)
 run eff requestSessionId = do
     t <- getCurrentTime
+    let ssettings = SessionSettings sname False 10
     runLift
         . runLoggerStdIO DEBUG
         . runExc
         . evalState defaultSessionState
         . runKvsRedis redisConnectInfo
-        . runSession sessionName t requestSessionId False 10 $ eff
+        . runSession ssettings t requestSessionId $ eff

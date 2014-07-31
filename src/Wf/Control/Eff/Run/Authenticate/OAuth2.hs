@@ -8,7 +8,7 @@ import Control.Eff.Lift (Lift)
 import Wf.Control.Eff.Authenticate (Authenticate(..), AuthenticationType(..))
 import Wf.Control.Eff.HttpClient (HttpClient)
 import Wf.Control.Eff.Session (Session)
-import Wf.Web.Authenticate.OAuth2 (OAuth2(..), redirectToAuthorizationServer, getAccessToken)
+import Wf.Web.Authenticate.OAuth2 (OAuth2(..), redirectToAuthorizationServer, getAccessToken, getUserInfo)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
 
@@ -25,13 +25,13 @@ runAuthenticateOAuth2
        , AuthenticationKeyType auth ~ (B.ByteString, B.ByteString)
        , AuthenticationUserType auth ~ u
        )
-    => OAuth2 u (Eff r) -> Eff (Authenticate auth :> r) a -> Eff r a
+    => OAuth2 u -> Eff (Authenticate auth :> r) a -> Eff r a
 runAuthenticateOAuth2 oauth2 = loop . admin
     where
     loop (Val a) = return a
 
     loop (E u) = handleRelay u loop handle
 
-    handle (Authenticate _ (code, state) c) = getAccessToken oauth2 code state >>= oauth2Authenticate oauth2 >>= loop . c
+    handle (Authenticate _ (code, state) c) = getAccessToken oauth2 code state >>= getUserInfo oauth2 >>= loop . c
 
     handle (AuthenticationTransfer _ res c) = redirectToAuthorizationServer oauth2 res >>= loop . c

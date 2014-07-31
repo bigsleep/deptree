@@ -86,7 +86,7 @@ routes = apiRoutes (return notFoundApp)
     ]
 
 notFoundApp :: Response L.ByteString
-notFoundApp = setBody "<h1>Not Found</h1>" . setStatus HTTP.status404 $ defaultResponse
+notFoundApp = setBody "<h1>Not Found</h1>" . setStatus HTTP.status404 $ defaultResponse ()
 
 rootApp :: () -> String
 rootApp _ = "<p>hello</p>"

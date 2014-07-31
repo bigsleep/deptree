@@ -4,14 +4,17 @@ module Wf.Web.Api
 , ApiDefinition(..)
 , ApiInfo(..)
 , getParameter
+, createApi
+, getApi
+, postApi
 ) where
 
 import qualified Data.List as L (lookup)
 import qualified Data.ByteString as B (ByteString)
 import Data.Typeable (Typeable)
 import Data.Reflection (Given, give, given)
-import qualified Wf.Web.Routing as R (RouteDefinition, Parameter, route, routes)
-import qualified Network.HTTP.Types as HTTP (Method)
+import qualified Wf.Web.Routing as R (RouteDefinition(..), RouteMethod(..), Parameter, route, routes, parseRoute)
+import qualified Network.HTTP.Types as HTTP (Method, methodGet, methodPost)
 
 data ApiDefinition request response m = ApiDefinition
     { apiName :: String
@@ -43,3 +46,19 @@ apiRoutes defaultApp apis request = R.routes defaultApp (map entry apis)
 
 getParameter :: Given ApiInfo => B.ByteString -> Maybe B.ByteString
 getParameter name = L.lookup name $ apiInfoParameters given
+
+createApi :: (Monad m) => String -> R.RouteDefinition -> (Given ApiInfo => request -> m response) -> ApiDefinition request response m
+createApi name route app =
+    ApiDefinition
+    { apiName = name
+    , apiRouteDefinition = route
+    , apiImplement = app
+    , apiBefore = return ()
+    , apiAfter = return ()
+    }
+
+getApi, postApi :: (Monad m) => String -> (Given ApiInfo => request -> m response) -> ApiDefinition request response m
+getApi route = createApi route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodGet, R.routeDefinitionPattern = R.parseRoute route }
+postApi route = createApi route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodPost, R.routeDefinitionPattern = R.parseRoute route }
+
+

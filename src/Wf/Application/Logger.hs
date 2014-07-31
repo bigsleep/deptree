@@ -2,16 +2,18 @@
 module Wf.Application.Logger
 ( Logger
 , DefaultLogger(..)
+, Wf.Control.Eff.Logger.LogLevel(..)
 , log
 , logDebug
 , logNotice
 , logInfo
 , logWarn
 , logError
+, Wf.Control.Eff.Logger.runLoggerStdIO
 ) where
 
 import Control.Eff (Eff, Member)
-import qualified Wf.Control.Eff.Logger (Logger, LogOutputType, LogLevel(..), log)
+import qualified Wf.Control.Eff.Logger (Logger, LogOutputType, LogLevel(..), log, runLoggerStdIO)
 import Data.Typeable (Typeable)
 import Prelude hiding (log)
 

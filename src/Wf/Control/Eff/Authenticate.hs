@@ -13,11 +13,10 @@ import Wf.Network.Http.Response (Response)
 class AuthenticationType auth where
     type AuthenticationUserType auth :: *
     type AuthenticationKeyType auth :: *
-    type AuthenticationResponseBodyType auth :: *
 
 data Authenticate auth a =
     Authenticate auth (AuthenticationKeyType auth) (AuthenticationUserType auth -> a) |
-    AuthenticationTransfer auth (Response (AuthenticationResponseBodyType auth)) (Response (AuthenticationResponseBodyType auth) -> a)
+    AuthenticationTransfer auth (Response ()) (Response () -> a)
     deriving (Typeable, Functor)
 
 authenticate :: (Typeable auth, Member (Authenticate auth) r)
@@ -25,5 +24,5 @@ authenticate :: (Typeable auth, Member (Authenticate auth) r)
 authenticate auth key = send $ inj . Authenticate auth key
 
 authenticationTransfer :: (Typeable auth, Member (Authenticate auth) r)
-             => auth -> Response (AuthenticationResponseBodyType auth) -> Eff r (Response (AuthenticationResponseBodyType auth))
+             => auth -> Response () -> Eff r (Response ())
 authenticationTransfer auth response = send $ inj . AuthenticationTransfer auth response

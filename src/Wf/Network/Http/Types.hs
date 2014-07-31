@@ -12,9 +12,11 @@ module Wf.Network.Http.Types
 , defaultResponse
 ) where
 
+import Control.Exception (Exception)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString, empty)
 import qualified Network.HTTP.Types as HTTP (HttpVersion, Header, Method, Status, Query, http10, methodGet, status200)
+import Network.Socket (SockAddr(..))
 
 type HttpVersion = HTTP.HttpVersion
 
@@ -24,16 +26,19 @@ type RequestHeader = HTTP.Header
 
 type RequestQuery = HTTP.Query
 
+type RequestRemoteHost = SockAddr
+
 data Request body = Request
     { requestHttpVersion :: HttpVersion
     , requestMethod :: RequestMethod
     , requestHeaders :: [RequestHeader]
     , requestPath :: [B.ByteString]
     , requestRawPath :: B.ByteString
-    , requestQuery :: [RequestQuery]
+    , requestQuery :: RequestQuery
     , requestRawQuery :: B.ByteString
+    , requestRemoteHost :: RequestRemoteHost
     , requestBody :: body
-    , isSecure :: Bool
+    , requestIsSecure :: Bool
     } deriving (Show, Typeable, Eq)
 
 type ResponseStatus = HTTP.Status
@@ -55,13 +60,17 @@ defaultRequest = Request
     , requestRawPath = B.empty
     , requestQuery = []
     , requestRawQuery = B.empty
-    , isSecure = False
+    , requestIsSecure = False
+    , requestRemoteHost = SockAddrInet (toEnum 0) (toEnum 0)
     , requestBody = ()
     }
 
-defaultResponse :: Response ()
-defaultResponse = Response
+defaultResponse :: a -> Response a
+defaultResponse a = Response
     { responseStatus = HTTP.status200
     , responseHeaders = []
-    , responseBody = ()
+    , responseBody = a
     }
+
+instance (Typeable body, Show body) => Exception (Response body)
+
