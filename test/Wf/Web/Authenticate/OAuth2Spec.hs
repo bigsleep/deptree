@@ -40,7 +40,7 @@ import Wf.Application.Logger (Logger, logDebug)
 import Wf.Application.Exception (Exception(..))
 import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
-import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
+import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData, getRequestSessionId)
 import Wf.Control.Eff.Run.Session (runSession)
 import Wf.Network.Http.Types (Response(..))
 
@@ -149,8 +149,6 @@ runTest ::
         :> State (M.Map B.ByteString L.ByteString)
         :> State SessionState
         :> Exception
-        :> Reader Wai.Request
-        :> Reader Time
         :> Logger
         :> Lift IO
         :> ()) a ->
@@ -158,13 +156,11 @@ runTest ::
 runTest name s request cresponse t =
       runLift
     . runLoggerStdIO DEBUG
-    . flip runReader t
-    . flip runReader request
     . runExc
     . evalState defaultSessionState
     . runState s
     . runKvsMap
-    . runSession name False 0
+    . runSession name t (getRequestSessionId name . Wai.requestHeaders $ request) False 0
     . runHttpClientMock cresponse
 
 

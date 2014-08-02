@@ -1,10 +1,10 @@
 {-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes, QuasiQuotes, TypeFamilies #-}
 module Wf.Control.Eff.Run.Session
 ( runSession
+, getRequestSessionId
 ) where
 
 import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
-import Control.Eff.Reader.Strict (Reader, ask)
 import qualified Control.Eff.State.Strict as State (State, get, put, modify)
 import Control.Eff.Lift (Lift, lift)
 import Wf.Control.Eff.Session (Session(..))
@@ -15,19 +15,18 @@ import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as B (ByteString, append)
 import qualified Data.ByteString.Char8 as B (pack)
-import qualified Data.ByteString.Lazy as L (toStrict, fromStrict)
 import qualified Data.List as L (lookup)
 import qualified Data.HashMap.Strict as HM (lookup, insert, empty)
-import Data.Maybe (fromMaybe, listToMaybe)
+import Data.Maybe (listToMaybe)
 import qualified Blaze.ByteString.Builder as Blaze (toByteString)
 import qualified Data.Aeson as DA (decode, encode)
 
-import qualified Network.Wai as Wai (Request, requestHeaders)
 import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCookieName, setCookieValue, setCookieExpires, setCookieSecure)
 
 import System.Random (newStdGen, randomRs)
 import Text.Printf.TH (s)
 
+import Wf.Network.Http.Types (RequestHeader)
 import Wf.Web.Session.Types (SessionState(..), SessionData(..), SessionKvs(..), defaultSessionState)
 import Wf.Application.Exception (Exception)
 import Wf.Application.Logger (Logger, logDebug, logInfo, logError)
@@ -36,13 +35,11 @@ import qualified Wf.Application.Time as T (Time, formatTime, addSeconds, diffTim
 runSession :: ( Member Exception r
               , Member Logger r
               , Member (Kvs.Kvs SessionKvs) r
-              , Member (Reader T.Time) r
-              , Member (Reader Wai.Request) r
               , Member (State.State SessionState) r
               , SetMember Lift (Lift IO) r
               )
-           => B.ByteString -> Bool -> Integer -> Eff (Session :> r) a -> Eff r a
-runSession sessionName isSecure ttl eff = do
+           => B.ByteString -> T.Time -> Maybe B.ByteString -> Bool -> Integer -> Eff (Session :> r) a -> Eff r a
+runSession sessionName current requestSessionId isSecure ttl eff = do
     loadSession
     r <- loop . admin $ eff
     saveSession
@@ -52,15 +49,12 @@ runSession sessionName isSecure ttl eff = do
           loop (E u) = handleRelay u loop handle
 
           loadSession = do
-            request <- ask
-            sid <- return . getRequestSessionId sessionName $ request
-            sd <- maybe (return Nothing) (Kvs.get SessionKvs) sid
-            maybe (return ()) putLoadedSession ((,) <$> sid <*> sd)
+            sd <- maybe (return Nothing) (Kvs.get SessionKvs) requestSessionId
+            maybe (return ()) putLoadedSession ((,) <$> requestSessionId <*> sd)
             logDebug $ [s|load session. session=%s|] (show sd)
 
           putLoadedSession (sid, sd) = do
-            cur <- ask
-            if cur < sessionExpireDate sd
+            if current < sessionExpireDate sd
                 then State.put SessionState { sessionId = sid, sessionData = sd, isNew = False }
                 else Kvs.delete SessionKvs sid >> State.put defaultSessionState
 
@@ -68,7 +62,6 @@ runSession sessionName isSecure ttl eff = do
             sd <- State.get
             let sid = sessionId sd
             when (sid /= "") $ do
-                current <- ask
                 let expire = sessionExpireDate . sessionData $ sd
                     ttl' = T.diffTime expire current
                 when (ttl' > 0) $ do
@@ -76,14 +69,13 @@ runSession sessionName isSecure ttl eff = do
                     logDebug $ [s|save session. session=%s ttl=%d|] (show sd) ttl'
 
           newSession = do
-            t <- ask
             let len = 100
-            sid <- lift $ genSessionId sessionName t len
+            sid <- lift $ genSessionId sessionName current len
             duplicate <- Kvs.exists SessionKvs sid
             if duplicate
                 then newSession
                 else do
-                     let start = t
+                     let start = current
                      let end = T.addSeconds start ttl
                      let sd = SessionData HM.empty start end
                      State.put SessionState { sessionId = sid, sessionData = sd, isNew = True }
@@ -102,8 +94,7 @@ runSession sessionName isSecure ttl eff = do
                   encoded = DA.encode $ [v]
 
           handle (SessionTtl ttl' c) = do
-            t <- ask
-            let expire = T.addSeconds t ttl'
+            let expire = T.addSeconds current ttl'
             State.modify (f expire)
             loop c
             where f expire ses @ (SessionState _ d _) = ses { sessionData = d { sessionExpireDate = expire } }
@@ -130,8 +121,8 @@ runSession sessionName isSecure ttl eff = do
             loop . c $ ("Set-Cookie", Blaze.toByteString . Cookie.renderSetCookie $ setCookie)
 
 
-getRequestSessionId :: B.ByteString -> Wai.Request -> Maybe B.ByteString
-getRequestSessionId name = (L.lookup name =<<) . fmap Cookie.parseCookies . L.lookup "Cookie" . Wai.requestHeaders
+getRequestSessionId :: B.ByteString -> [RequestHeader] -> Maybe B.ByteString
+getRequestSessionId name = (L.lookup name =<<) . fmap Cookie.parseCookies . L.lookup "Cookie"
 
 genRandomByteString :: Int -> IO B.ByteString
 genRandomByteString len = return . B.pack . take len . map (chars !!) . randomRs (0, length chars - 1) =<< newStdGen
@@ -142,4 +133,3 @@ genSessionId sessionName t len = do
     let dateStr = B.pack $ T.formatTime ":%Y%m%d:" t
     randomStr <- genRandomByteString len
     return $ sessionName `B.append` dateStr `B.append` randomStr
-

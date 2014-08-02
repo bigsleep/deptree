@@ -22,14 +22,13 @@ import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import qualified Data.Aeson as DA (encode)
 import Wf.Data.Serializable (serialize)
 
-import qualified Network.Wai as Wai (Request, defaultRequest, requestHeaders)
 import Web.Cookie (SetCookie, renderCookies)
 import Blaze.ByteString.Builder (toByteString)
 
 import Wf.Application.Logger (Logger, logDebug)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Application.Exception (Exception(..))
-import Wf.Web.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId, runSession, SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData)
+import Wf.Web.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId, runSession, SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), defaultSessionState, defaultSessionData, getRequestSessionId)
 import Wf.Application.Time (Time, getCurrentTime, addSeconds)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
@@ -38,15 +37,15 @@ import qualified Test.QuickCheck.Property as Q
 
 sessionSpec :: Spec
 sessionSpec = describe "session" $ do
-
     it "start automatically" $ do
+        t <- getCurrentTime
         let key = "state" :: B.ByteString
         let val = "hello" :: B.ByteString
         let code = do
                     sput key val
                     sttl 10
                     getSessionId
-        Right (s, sid) <- runTest "SID" False M.empty Wai.defaultRequest code
+        Right (s, sid) <- runTest "SID" t Nothing False M.empty code
         shouldSatisfy s (M.member sid)
 
     it "restore automatically" $ do
@@ -54,7 +53,6 @@ sessionSpec = describe "session" $ do
         let sid = "testSessionId000"
         let cookies = [(name, sid)]
         let headers = [("Cookie", toByteString . renderCookies $ cookies)]
-        let request = Wai.defaultRequest { Wai.requestHeaders = headers }
         let key = "hello"
         let val = ("world", 1, [3]) :: (String, Integer, [Integer])
         let sval = HM.fromList [(key, DA.encode $ [val])]
@@ -66,10 +64,11 @@ sessionSpec = describe "session" $ do
                     v <- sget key
                     sid' <- getSessionId
                     return (v, sid')
-        Right (_, result) <- runTest name False sessionState request code
+        Right (_, result) <- runTest name t (getRequestSessionId name headers) False sessionState code
         result `shouldBe` (Just val, sid)
 
     it "destroy" $ do
+        t <- getCurrentTime
         let key = "state" :: B.ByteString
         let val = "hello" :: B.ByteString
         let code = do
@@ -78,35 +77,31 @@ sessionSpec = describe "session" $ do
                     sdestroy
                     after <- getSessionId
                     return (before, after)
-        Right (s, (_, afterId)) <- runTest "SID" False M.empty Wai.defaultRequest code
+        Right (s, (_, afterId)) <- runTest "SID" t Nothing False M.empty code
         afterId `shouldBe` ""
         shouldSatisfy s M.null
 
 
 
 runTest :: B.ByteString ->
+           Time ->
+           Maybe B.ByteString ->
            Bool ->
            M.Map B.ByteString L.ByteString ->
-           Wai.Request ->
            Eff ( Session
               :> Kvs.Kvs SessionKvs
               :> State (M.Map B.ByteString L.ByteString)
               :> State SessionState
               :> Exception
-              :> Reader Wai.Request
-              :> Reader Time
               :> Logger
               :> Lift IO
               :> ()) a ->
            IO (Either SomeException (M.Map B.ByteString L.ByteString, a))
-runTest name isSecure s request a = do
-    t <- getCurrentTime
+runTest name t requestSessionId isSecure s a = do
     runLift
         . runLoggerStdIO DEBUG
-        . flip runReader t
-        . flip runReader request
         . runExc
         . evalState defaultSessionState
         . runState s
         . runKvsMap
-        . runSession name isSecure 0 $ a
+        . runSession name t requestSessionId isSecure 0 $ a
