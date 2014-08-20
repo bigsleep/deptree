@@ -1,3 +1,18 @@
+-------------------------------------------------------------
+20140821 Content-Length
+
+WaiのresponseBuilderやresponseLBSではContent-Lengthがヘッダーにないときは
+Transfer-Encoding: chunked
+が挿入されるらしい。Warpではということ?
+Content-Lengthはいれたほうがいいのか?
+
+https://hackage.haskell.org/package/warp-3.0.1.1/docs/Network-Wai-Handler-Warp.html
+
+-------------------------------------------------------------
+20140821 session
+
+SessionStateはrunのところでstateを引数で引き回せば消せるような気がする
+
 ------------------------------------------------------------
 20140820 間違ったところメモ
 
@@ -17,6 +32,8 @@
 githubのoauth2も試す
 
 seleniumのテストとか?面倒
+
+scottyにあるhtmlとかjsonの関数をたす
 
 
 -------------------------------------------------------------------
