@@ -65,7 +65,7 @@ jsonApi name route f =
     where
     api :: (DA.FromJSON i, DA.ToJSON o, Member Exception r, Member Logger r, Given ApiInfo)
         => (Given ApiInfo => i -> Eff r o) -> Request L.ByteString -> Eff r (Response L.ByteString)
-    api g request = logDebug ("jsonApi request:" ++ show request) >> parse (requestBody request) >>= g >>= render
+    api g request = logDebug ("jsonApi request: " ++ show request) >> parse (requestBody request) >>= g >>= render
 
     parse :: (DA.FromJSON i, Member Exception r)
           => L.ByteString -> Eff r i
@@ -82,7 +82,7 @@ jsonApi name route f =
                 , responseHeaders = [contentType, contentLength]
                 , responseBody = body
                 }
-        logDebug $ "jsonApi response:" ++ show response
+        logDebug $ "jsonApi response: " ++ show response
         return response
 
     onError :: (Member Exception r) => L.ByteString -> Eff r a

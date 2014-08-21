@@ -7,6 +7,9 @@ module Wf.Web.Api
 , createApi
 , getApi
 , postApi
+, createApiWith
+, getApiWith
+, postApiWith
 ) where
 
 import qualified Data.List as L (lookup)
@@ -61,4 +64,25 @@ getApi, postApi :: (Monad m) => String -> (Given ApiInfo => request -> m respons
 getApi route = createApi route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodGet, R.routeDefinitionPattern = R.parseRoute route }
 postApi route = createApi route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodPost, R.routeDefinitionPattern = R.parseRoute route }
 
+
+createApiWith
+    :: (Monad m)
+    => String
+    -> R.RouteDefinition
+    -> (Given ApiInfo => request -> m input)
+    -> (Given ApiInfo => input -> m output)
+    -> (Given ApiInfo => output -> m response)
+    -> ApiDefinition request response m
+createApiWith name route parser implement renderer =
+    createApi name route (\request -> parser request >>= implement >>= renderer)
+
+getApiWith, postApiWith
+    :: (Monad m)
+    => String
+    -> (Given ApiInfo => request -> m input)
+    -> (Given ApiInfo => input -> m output)
+    -> (Given ApiInfo => output -> m response)
+    -> ApiDefinition request response m
+getApiWith route = createApiWith route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodGet, R.routeDefinitionPattern = R.parseRoute route }
+postApiWith route = createApiWith route R.RouteDefinition { R.routeDefinitionMethod = R.RouteMethodSpecific HTTP.methodPost, R.routeDefinitionPattern = R.parseRoute route }
 
