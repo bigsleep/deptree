@@ -73,4 +73,3 @@ defaultResponse a = Response
     }
 
 instance (Typeable body, Show body) => Exception (Response body)
-

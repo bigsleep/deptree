@@ -7,10 +7,17 @@ module Wf.Network.Http.Response
 , setBody
 , redirect
 , defaultResponse
+, setContentType
+, setContentLength
+, text
+, html
+, json
 ) where
 
 import qualified Data.ByteString as B (ByteString)
-import qualified Network.HTTP.Types as HTTP (status302)
+import qualified Data.ByteString.Char8 as B (pack)
+import qualified Data.ByteString.Lazy as L (ByteString, length)
+import qualified Network.HTTP.Types as HTTP (status302, hContentType, hContentLength)
 import Wf.Network.Http.Types (Response(..), ResponseStatus, ResponseHeader, defaultResponse)
 
 setStatus :: ResponseStatus -> Response body -> Response body
@@ -31,3 +38,17 @@ redirect url res =
         header = ("Location", url)
     in res { responseStatus = status, responseHeaders = header : responseHeaders res }
 
+setContentType :: B.ByteString -> Response a -> Response a
+setContentType ctype = addHeader (HTTP.hContentType, ctype)
+
+setContentLength :: Integer -> Response a -> Response a
+setContentLength l = addHeader (HTTP.hContentLength, B.pack . show $ l)
+
+text :: L.ByteString -> Response a -> Response L.ByteString
+text b = setContentType "text/plain" . setContentLength (fromIntegral . L.length $ b) . setBody b
+
+html :: L.ByteString -> Response a -> Response L.ByteString
+html b = setContentType "text/html" . setContentLength (fromIntegral . L.length $ b) . setBody b
+
+json :: L.ByteString -> Response a -> Response L.ByteString
+json b = setContentType "application/json" . setContentLength (fromIntegral . L.length $ b) . setBody b
