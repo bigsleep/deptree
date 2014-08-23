@@ -32,10 +32,10 @@ import Wf.Control.Eff.Run.Authenticate.OAuth2 (runAuthenticateOAuth2)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
 import Wf.Web.Authenticate.OAuth2 (OAuth2(..), OAuth2Error(..))
 import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
-import Wf.Network.Http.Response (setStatus, addHeader, setHeaders, redirect, setBody)
-import Wf.Network.Wai (toWaiApplication)
+import Wf.Network.Http.Response (setStatus, addHeader, setHeaders, redirect, setBody, file, json)
+import Wf.Network.Wai (toWaiResponse, toWaiApplication)
 import Wf.Web.Session (Session, sget, sput, sdestroy, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, SessionSettings(sessionName), getRequestSessionId)
-import Wf.Web.Api (apiRoutes, getApi)
+import Wf.Web.Api (apiRoutes, getApi, postApi)
 import Wf.Application.Time (Time, getCurrentTime)
 import Wf.Application.Exception (Exception, throwException)
 import Wf.Application.Logger (Logger, logDebug, runLoggerStdIO, LogLevel(..))
@@ -94,11 +94,11 @@ type M = Eff
     :> Lift IO
     :> ())
 
-routes :: Request L.ByteString -> M (Response L.ByteString)
+routes :: Request L.ByteString -> M Wai.Response
 routes request = apiRoutes rootApp rs request method path
     where
     rs = [ getApi "/" (const rootApp)
-         , getApi "/login" (const loginApp)
+         , postApi "/login" (const loginApp)
          , getApi "/oauth2callback" oauth2CallbackApp
          ]
     method = requestMethod request
@@ -108,22 +108,18 @@ instance AuthenticationType () where
     type AuthenticationKeyType () = (B.ByteString, B.ByteString)
     type AuthenticationUserType () = User
 
-rootApp :: M (Response L.ByteString)
+rootApp :: M Wai.Response
 rootApp = do
     maybeUser <- sget "login_user" :: M (Maybe User)
 
     case maybeUser of
-         Just user -> let body = DA.encode user
-                          contentType = (HTTP.hContentType, "application/json")
-                          contentLength = (HTTP.hContentLength, B.pack . show . L.length $ body)
-                          headers = [contentType, contentLength]
-                      in return . setHeaders headers $ defaultResponse body
-         Nothing -> return . redirect "http://localhost:3000/login" $ (defaultResponse "")
+         Just user -> return . toWaiResponse . json (DA.encode user) $ defaultResponse ()
+         Nothing -> return . toWaiResponse . file "oauth2-example/static/index.html" $ defaultResponse ()
 
-loginApp :: M (Response L.ByteString)
-loginApp = fmap (setBody "") $ authenticationTransfer () (defaultResponse ())
+loginApp :: M Wai.Response
+loginApp = fmap toWaiResponse $ authenticationTransfer () $ defaultResponse ()
 
-oauth2CallbackApp :: Request L.ByteString -> M (Response L.ByteString)
+oauth2CallbackApp :: Request L.ByteString -> M Wai.Response
 oauth2CallbackApp req = do
     let maybeCode = id =<< (List.lookup "code" . requestQuery $ req)
     maybeState <- sget "state"
@@ -131,23 +127,23 @@ oauth2CallbackApp req = do
     logDebug $ "state code " ++ show (maybeState, maybeCode)
     user <- case (maybeState, maybeCode) of
                  (Just state, Just code) -> authenticate () (code, state)
-                 _ -> throwException $ redirect "http://localhost:3000/login" $ (defaultResponse L.empty)
+                 _ -> throwException $ redirect "http://localhost:3000/login" $ defaultResponse ()
 
     logDebug $ "loginUser: " ++ show user
 
     sdestroy
     sput "login_user" user
     setCookie <- renderSetCookie
-    return . redirect "http://localhost:3000/" . addHeader setCookie $ (defaultResponse "")
+    return . toWaiResponse . redirect "http://localhost:3000/" . addHeader setCookie $ defaultResponse ()
 
 
 run :: OAuth2 User
     -> Redis.ConnectInfo
     -> N.Manager
     -> SessionSettings
-    -> (Request L.ByteString -> M (Response L.ByteString))
+    -> (Request L.ByteString -> M Wai.Response)
     -> Request L.ByteString
-    -> IO (Response L.ByteString)
+    -> IO Wai.Response
 run oauth2 redis manager sessionSettings app request = do
     t <- getCurrentTime
     run' t request
@@ -164,7 +160,7 @@ run oauth2 redis manager sessionSettings app request = do
         . runHttpClient manager
         . runAuthenticateOAuth2 oauth2
         . app
-    internalError = setStatus HTTP.status500 $ defaultResponse "<p>InternalError<p>"
+    internalError = toWaiResponse . setStatus HTTP.status500 . file "oauth2-example/static/error.html" $ defaultResponse ()
     sname = sessionName sessionSettings
     requestSessionId = getRequestSessionId sname . requestHeaders $ request
     handleError (Left (SomeException e)) = do

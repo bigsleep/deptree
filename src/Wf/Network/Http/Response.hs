@@ -12,6 +12,7 @@ module Wf.Network.Http.Response
 , text
 , html
 , json
+, file
 ) where
 
 import qualified Data.ByteString as B (ByteString)
@@ -52,3 +53,6 @@ html b = setContentType "text/html" . setContentLength (fromIntegral . L.length 
 
 json :: L.ByteString -> Response a -> Response L.ByteString
 json b = setContentType "application/json" . setContentLength (fromIntegral . L.length $ b) . setBody b
+
+file :: FilePath -> Response a -> Response FilePath
+file path = setBody path
