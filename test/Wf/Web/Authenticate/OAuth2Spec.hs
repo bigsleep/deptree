@@ -42,7 +42,7 @@ import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), SessionSettings(..), defaultSessionState, defaultSessionData, getRequestSessionId)
 import Wf.Control.Eff.Run.Session (runSession)
-import Wf.Network.Http.Types (Response(..))
+import Wf.Network.Http.Types (Response(..), defaultResponse)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, expectationFailure)
 import qualified Test.Hspec.QuickCheck as Q
@@ -59,7 +59,9 @@ oauth2TestSetting = OAuth2
         , oauth2ClientSecret = "test_client_secret"
         , oauth2RedirectUri = "https://test.client.com/redirect"
         , oauth2Scope = "openid email"
+        , oauth2AccessTokenType = BEARER
         }
+    , oauth2UserParser = const Nothing
     }
 
 defaultClientResponse :: N.Response L.ByteString
@@ -71,9 +73,6 @@ defaultClientResponse = N.Response
     , N.responseCookieJar = N.CJ []
     , N.responseClose' = N.ResponseClose (return ())
     }
-
-defaultServerResponse :: Wai.Response
-defaultServerResponse = Wai.responseLBS HTTP.status501 [] ""
 
 
 oauth2Spec :: Spec
@@ -87,7 +86,7 @@ redirectAuthServerSpec :: Spec
 redirectAuthServerSpec =
     it "redirect to authorization server" $ do
         let oauth2 = oauth2TestSetting
-            code = redirectToAuthorizationServer oauth2 Response {}
+            code = redirectToAuthorizationServer oauth2 $ defaultResponse ()
         t <- getCurrentTime
 
         Right (m, res) <- runTest "SID" M.empty Wai.defaultRequest (const defaultClientResponse) t code
@@ -155,7 +154,7 @@ getUserInfoSpec = describe "get token info" $ do
     let accessToken = "test_access_token_xxx"
         oauth2 = oauth2TestSetting { oauth2UserParser = DA.decode }
         uinfo = DA.Object . HM.fromList $ [("access_token", DA.String . T.decodeUtf8 $ accessToken), ("id", DA.String "userId0001"), ("email", DA.String "aaa@bbb.com")]
-        run = runTest "SID" M.empty Wai.defaultRequest (userInfoServer oauth2 accessToken uinfo) mjd
+        run = runTest "SID" M.empty Wai.defaultRequest (userInfoServer accessToken uinfo) mjd
 
     it "success with a right access token" $ do
         let handleResult (Right (_, result)) = result `shouldBe` uinfo
@@ -219,8 +218,8 @@ authServer oauth2 code accessToken request =
           errorResponse = defaultClientResponse { N.responseStatus = HTTP.status403 }
 
 
-userInfoServer :: OAuth2 u -> B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
-userInfoServer oauth2 accessToken userInfo request =
+userInfoServer :: B.ByteString -> DA.Value -> N.Request -> N.Response L.ByteString
+userInfoServer accessToken userInfo request =
     if requestAccessToken == Just ("OAuth " `B.append` accessToken)
         then successResponse
         else errorResponse
