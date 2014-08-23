@@ -12,6 +12,8 @@ import Wf.Control.Eff.Kvs (Kvs)
 import Wf.Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
 import Wf.Web.Session (Session, sget, sput, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, getRequestSessionId, SessionSettings(..))
+import Wf.Network.Http.Response (setStatus, addHeader, html, defaultResponse)
+import Wf.Network.Wai (toWaiResponse)
 import Wf.Application.Time (Time, getCurrentTime)
 import Wf.Application.Exception (Exception)
 import Wf.Application.Logger (Logger, logDebug)
@@ -22,7 +24,7 @@ import qualified Database.Redis as Redis (ConnectInfo(..), defaultConnectInfo, P
 import qualified Network.Wai.Handler.Warp as Warp (run)
 
 import qualified Data.ByteString as B (ByteString)
-import qualified Data.ByteString.Lazy as L (ByteString, append)
+import qualified Data.ByteString.Lazy as L (append)
 import qualified Data.ByteString.Lazy.Char8 as L (pack)
 import qualified Data.ByteString.Char8 as B (pack, unpack)
 
@@ -33,27 +35,29 @@ app :: (Member Session r, Member Logger r) => Wai.Request -> Eff r Wai.Response
 app req = do
     logDebug . show $ Wai.requestHeaders req
     count <- sget "count"
-    exec (fmap (read . B.unpack) count)
+    exec $ fmap (read . B.unpack) count
 
     where
     exec Nothing = do
         sput "count" (B.pack . show $ (1 :: Integer))
         setCookie <- renderSetCookie
-        let headers = [setCookie]
-        let body = "<h1>You area new here</h1>"
-        return $ Wai.responseLBS HTTP.status200 headers body
+        let body = "<!DOCTYPE html><h1>0</h1>" `L.append` button
+        return . toWaiResponse . addHeader setCookie . html body $ defaultResponse ()
 
     exec (Just c) = do
         sput "count" (B.pack . show $ (c + 1 :: Integer))
-        let headers = []
-        let body = "<h1>You visited here " `L.append` (L.pack . show $ c) `L.append` " times</h1>"
-        return $ Wai.responseLBS HTTP.status200 headers body
+        let body = "<!DOCTYPE html><h1>" `L.append` (L.pack . show $ c) `L.append` "</h1>" `L.append` button
+        return . toWaiResponse . html body $ defaultResponse ()
+
+    button = "<form action=\"\" method=\"get\"><input type=\"submit\" value=\"++\"></form>"
+
+
 
 main :: IO ()
 main = do
     Warp.run 8080 server
     where
-    errorResponse = Wai.responseLBS HTTP.status500 [] ""
+    errorResponse = toWaiResponse . setStatus HTTP.status500 $ defaultResponse ()
     server request respond = do
         let requestSessionId = getRequestSessionId sname . Wai.requestHeaders $ request
         r <- run (app request) requestSessionId
@@ -76,7 +80,7 @@ run ::
     IO (Either SomeException Wai.Response)
 run eff requestSessionId = do
     t <- getCurrentTime
-    let ssettings = SessionSettings sname False 10
+    let ssettings = SessionSettings sname False 300
     runLift
         . runLoggerStdIO DEBUG
         . runExc
