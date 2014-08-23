@@ -1,9 +1,0 @@
-{
-    "oauth2AuthorizationServerName" : "",
-    "oauth2AuthorizationUri" : "",
-    "oauth2TokenUri" : "",
-    "oauth2ClientId" : "",
-    "oauth2ClientSecret" : "",
-    "oauth2RedirectUri" : "",
-    "oauth2Scope" : ""
-}
