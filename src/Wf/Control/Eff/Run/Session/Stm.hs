@@ -1,17 +1,18 @@
 {-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes #-}
 module Wf.Control.Eff.Run.Session.Stm
-( createSessionStore
+( initializeSessionStore
 , runSessionStm
 ) where
 
 import qualified Data.ByteString as B (ByteString)
-import qualified Data.HashMap.Strict as HM (HashMap, lookup, insert, delete, empty, member)
+import qualified Data.HashMap.Strict as HM (HashMap, lookup, insert, delete, empty, member, filter)
 
 import Control.Concurrent.STM (STM, TVar, newTVar, readTVar, modifyTVar', atomically)
+import Control.Concurrent (forkIO, threadDelay)
 import Control.Eff (Eff, (:>), Member, SetMember)
 import qualified Control.Eff.State.Strict as State (State)
 import Control.Eff.Lift (Lift, lift)
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Applicative ((<$>), (<*>))
 
 import Wf.Control.Eff.Session (Session(..))
@@ -19,19 +20,30 @@ import Wf.Control.Eff.Run.Session (genSessionId, runSession)
 import Wf.Web.Session.Types (SessionState(..), SessionData(..), SessionSettings(..), SessionHandler(..), defaultSessionState, defaultSessionData)
 import Wf.Application.Exception (Exception)
 import Wf.Application.Logger (Logger, logDebug, logInfo)
-import qualified Wf.Application.Time as T (Time, addSeconds, diffTime)
+import qualified Wf.Application.Time as T (Time, addSeconds, diffTime, getCurrentTime)
 
 import Text.Printf.TH (s)
 
 data SessionStore = SessionStore (TVar (HM.HashMap B.ByteString SessionData))
 
-createSessionStore
+initializeSessionStore
     ::
     ( Member Logger r
     , SetMember Lift (Lift IO) r
     )
-    => Eff r SessionStore
-createSessionStore = lift . fmap SessionStore . atomically . newTVar $ HM.empty
+    => Integer -> Eff r SessionStore
+initializeSessionStore gcInterval = do
+    tv <- lift . atomically . newTVar $ HM.empty
+    void . lift . forkIO $ gc tv
+    return (SessionStore tv)
+    where
+    gc tv = do
+        threadDelay . fromInteger $ gcInterval
+        current <- T.getCurrentTime
+        atomically . modifyTVar' tv $ HM.filter (living current . sessionExpireDate)
+    living current t = current < t
+
+
 
 runSessionStm
     ::
