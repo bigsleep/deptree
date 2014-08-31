@@ -12,7 +12,7 @@ import Control.Concurrent (forkIO, threadDelay)
 import Control.Eff (Eff, (:>), Member, SetMember)
 import qualified Control.Eff.State.Strict as State (State)
 import Control.Eff.Lift (Lift, lift)
-import Control.Monad (when, void)
+import Control.Monad (when, void, forever)
 import Control.Applicative ((<$>), (<*>))
 
 import Wf.Control.Eff.Session (Session(..))
@@ -34,7 +34,7 @@ initializeSessionStore
     => Integer -> Eff r SessionStore
 initializeSessionStore gcInterval = do
     tv <- lift . atomically . newTVar $ HM.empty
-    void . lift . forkIO $ gc tv
+    void . lift . forkIO $ forever (gc tv)
     return (SessionStore tv)
     where
     gc tv = do
