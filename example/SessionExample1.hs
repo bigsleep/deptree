@@ -11,7 +11,8 @@ import Control.Exception (SomeException)
 import Wf.Control.Eff.Kvs (Kvs)
 import Wf.Control.Eff.Logger (LogLevel(..), runLoggerStdIO)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
-import Wf.Web.Session (Session, sget, sput, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, getRequestSessionId, SessionSettings(..))
+import Wf.Web.Session (Session, sget, sput, renderSetCookie, SessionState, defaultSessionState, SessionKvs, getRequestSessionId, SessionSettings(..))
+import Wf.Control.Eff.Run.Session.Kvs (runSessionKvs)
 import Wf.Network.Http.Response (setStatus, addHeader, html, defaultResponse)
 import Wf.Network.Wai (toWaiResponse)
 import Wf.Application.Time (Time, getCurrentTime)
@@ -80,10 +81,10 @@ run ::
     IO (Either SomeException Wai.Response)
 run eff requestSessionId = do
     t <- getCurrentTime
-    let ssettings = SessionSettings sname False 300
+    let ssettings = SessionSettings sname False 300 40
     runLift
         . runLoggerStdIO DEBUG
         . runExc
         . evalState defaultSessionState
         . runKvsRedis redisConnectInfo
-        . runSession ssettings t requestSessionId $ eff
+        . runSessionKvs ssettings t requestSessionId $ eff

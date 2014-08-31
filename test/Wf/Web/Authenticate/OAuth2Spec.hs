@@ -41,7 +41,7 @@ import Wf.Application.Exception (Exception(..))
 import Wf.Application.Time (Time, getCurrentTime, addSeconds, mjd)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Web.Session (SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), SessionSettings(..), defaultSessionState, defaultSessionData, getRequestSessionId)
-import Wf.Control.Eff.Run.Session (runSession)
+import Wf.Control.Eff.Run.Session.Kvs (runSessionKvs)
 import Wf.Network.Http.Types (Response(..), defaultResponse)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy, expectationFailure)
@@ -189,11 +189,11 @@ runTest name s request cresponse t =
     . evalState defaultSessionState
     . runState s
     . runKvsMap
-    . runSession ssettings t (getRequestSessionId name . Wai.requestHeaders $ request)
+    . runSessionKvs ssettings t (getRequestSessionId name . Wai.requestHeaders $ request)
     . runHttpClientMock cresponse
 
     where
-    ssettings = SessionSettings name False 0
+    ssettings = SessionSettings name False 0 40
 
 
 authServer :: OAuth2 u -> B.ByteString -> B.ByteString -> N.Request -> N.Response L.ByteString

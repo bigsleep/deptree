@@ -29,6 +29,7 @@ import Wf.Application.Logger (Logger, logDebug)
 import Wf.Control.Eff.Run.Kvs.Map (runKvsMap)
 import Wf.Application.Exception (Exception(..))
 import Wf.Web.Session (Session(..), sget, sput, sttl, sdestroy, getSessionId, runSession, SessionKvs(..), SessionError(..), SessionState(..), SessionData(..), SessionSettings(..), defaultSessionState, defaultSessionData, getRequestSessionId)
+import Wf.Control.Eff.Run.Session.Kvs (runSessionKvs)
 import Wf.Application.Time (Time, getCurrentTime, addSeconds)
 
 import Test.Hspec (Spec, describe, it, shouldBe, shouldSatisfy)
@@ -98,11 +99,11 @@ runTest :: B.ByteString ->
               :> ()) a ->
            IO (Either SomeException (M.Map B.ByteString L.ByteString, a))
 runTest name t requestSessionId isSecure s a = do
-    let ssettings = SessionSettings name isSecure 0
+    let ssettings = SessionSettings name isSecure 0 40
     runLift
         . runLoggerStdIO DEBUG
         . runExc
         . evalState defaultSessionState
         . runState s
         . runKvsMap
-        . runSession ssettings t requestSessionId $ a
+        . runSessionKvs ssettings t requestSessionId $ a

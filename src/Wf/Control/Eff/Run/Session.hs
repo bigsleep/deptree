@@ -1,23 +1,19 @@
-{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, QuasiQuotes, TypeFamilies #-}
+{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts #-}
 module Wf.Control.Eff.Run.Session
 ( runSession
 , getRequestSessionId
 , genSessionId
 ) where
 
-import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
+import Control.Eff (Eff, VE(..), (:>), Member, admin, handleRelay)
 import qualified Control.Eff.State.Strict as State (State, get, put, modify)
-import Control.Eff.Lift (Lift, lift)
 import Wf.Control.Eff.Session (Session(..))
-import qualified Wf.Control.Eff.Kvs as Kvs (Kvs, get, setWithTtl, delete, exists, ttl)
-
 import Control.Monad (when)
-import Control.Applicative ((<$>), (<*>))
 
 import qualified Data.ByteString as B (ByteString, append)
 import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.List as L (lookup)
-import qualified Data.HashMap.Strict as HM (lookup, insert, empty)
+import qualified Data.HashMap.Strict as HM (lookup, insert)
 import Data.Maybe (listToMaybe)
 import qualified Blaze.ByteString.Builder as Blaze (toByteString)
 import qualified Data.Aeson as DA (decode, encode)
@@ -25,31 +21,29 @@ import qualified Data.Aeson as DA (decode, encode)
 import qualified Web.Cookie as Cookie (parseCookies, renderSetCookie, def, setCookieName, setCookieValue, setCookieExpires, setCookieSecure)
 
 import System.Random (newStdGen, randomRs)
-import Text.Printf.TH (s)
 
 import Wf.Network.Http.Types (RequestHeader)
-import Wf.Web.Session.Types (SessionState(..), SessionData(..), SessionSettings(..), SessionKvs(..), defaultSessionState)
-import Wf.Application.Exception (Exception)
-import Wf.Application.Logger (Logger, logDebug, logInfo, logError)
-import qualified Wf.Application.Time as T (Time, formatTime, addSeconds, diffTime)
+import Wf.Web.Session.Types (SessionState(..), SessionData(..), SessionSettings(..), SessionHandler(..), defaultSessionState)
+import qualified Wf.Application.Time as T (Time, formatTime, addSeconds)
 
-runSession :: ( Member Exception r
-              , Member Logger r
-              , Member (Kvs.Kvs SessionKvs) r
-              , Member (State.State SessionState) r
-              , SetMember Lift (Lift IO) r
-              )
-           => SessionSettings -> T.Time -> Maybe B.ByteString -> Eff (Session :> r) a -> Eff r a
-runSession sessionSettings current requestSessionId eff = do
-    loadSession
+runSession
+    ::
+    ( Member (State.State SessionState) r
+    )
+    => SessionHandler (Eff r)
+    -> SessionSettings
+    -> T.Time
+    -> Maybe B.ByteString
+    -> Eff (Session :> r) a
+    -> Eff r a
+runSession handler sessionSettings current requestSessionId eff = do
+    State.put =<< loadSession
     r <- loop . admin $ eff
-    saveSession
+    saveSession =<< State.get
     return r
 
     where
     sname = sessionName sessionSettings
-
-    ttl = sessionTtl sessionSettings
 
     isSecure = sessionIsSecure sessionSettings
 
@@ -57,38 +51,13 @@ runSession sessionSettings current requestSessionId eff = do
 
     loop (E u) = handleRelay u loop handle
 
-    loadSession = do
-        sd <- maybe (return Nothing) (Kvs.get SessionKvs) requestSessionId
-        maybe (return ()) putLoadedSession ((,) <$> requestSessionId <*> sd)
-        logDebug $ [s|load session. session=%s|] (show sd)
+    newSession = sessionHandlerNew handler sessionSettings current
 
-    putLoadedSession (sid, sd) = do
-        if current < sessionExpireDate sd
-            then State.put SessionState { sessionId = sid, sessionData = sd, isNew = False }
-            else Kvs.delete SessionKvs sid >> State.put defaultSessionState
+    loadSession = sessionHandlerLoad handler current requestSessionId
 
-    saveSession = do
-        sd <- State.get
-        let sid = sessionId sd
-        when (sid /= "") $ do
-            let expire = sessionExpireDate . sessionData $ sd
-                ttl' = T.diffTime expire current
-            when (ttl' > 0) $ do
-                Kvs.setWithTtl SessionKvs sid (sessionData sd) ttl'
-                logDebug $ [s|save session. session=%s ttl=%d|] (show sd) ttl'
+    saveSession = sessionHandlerSave handler current
 
-    newSession = do
-        let len = 100
-        sid <- lift $ genSessionId sname current len
-        duplicate <- Kvs.exists SessionKvs sid
-        if duplicate
-            then newSession
-            else do
-                 let start = current
-                 let end = T.addSeconds start ttl
-                 let sd = SessionData HM.empty start end
-                 State.put SessionState { sessionId = sid, sessionData = sd, isNew = True }
-                 logInfo $ [s|new session. sessionId=%s|] sid
+    sessionDestroy = sessionHandlerDestroy handler
 
     handle (SessionGet k c) = do
         m <- return . HM.lookup k . sessionValue . sessionData =<< State.get
@@ -96,13 +65,13 @@ runSession sessionSettings current requestSessionId eff = do
 
     handle (SessionPut k v c) = do
         sd <- State.get
-        when (sessionId sd == "") newSession
+        when (sessionId sd == "") (State.put =<< newSession)
         State.modify f
         loop c
 
         where
         f ses @ (SessionState _ d @ (SessionData m _ _)  _) = ses { sessionData = d { sessionValue = HM.insert k encoded m } }
-        encoded = DA.encode $ [v]
+        encoded = DA.encode [v]
 
     handle (SessionTtl ttl' c) = do
         let expire = T.addSeconds current ttl'
@@ -114,7 +83,7 @@ runSession sessionSettings current requestSessionId eff = do
 
     handle (SessionDestroy c) = do
         sid <- fmap sessionId State.get
-        when (sid /= "") (Kvs.delete SessionKvs sid >> return ())
+        when (sid /= "") (sessionDestroy sid)
         State.put defaultSessionState
         loop c
 

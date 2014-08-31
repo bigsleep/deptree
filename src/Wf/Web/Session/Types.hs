@@ -5,6 +5,7 @@ module Wf.Web.Session.Types
 , SessionSettings(..)
 , SessionKvs(..)
 , SessionError(..)
+, SessionHandler(..)
 , defaultSessionState
 , defaultSessionData
 , defaultSessionSettings
@@ -39,6 +40,7 @@ data SessionSettings = SessionSettings
     { sessionName :: B.ByteString
     , sessionIsSecure :: Bool
     , sessionTtl :: Integer
+    , sessionIdLength :: Integer
     } deriving (Show, Typeable)
 
 DA.deriveJSON DA.defaultOptions ''SessionData
@@ -52,7 +54,7 @@ defaultSessionData :: SessionData
 defaultSessionData = SessionData HM.empty T.mjd T.mjd
 
 defaultSessionSettings :: SessionSettings
-defaultSessionSettings = SessionSettings "SID" False 3600
+defaultSessionSettings = SessionSettings "SID" False 3600 40
 
 data SessionKvs = SessionKvs deriving (Typeable)
 
@@ -67,3 +69,10 @@ instance Control.Exception.Exception SessionError
 instance Serializable SessionData where
     serialize = DA.encode
     deserialize = DA.decode
+
+data SessionHandler m = SessionHandler
+    { sessionHandlerNew :: SessionSettings -> T.Time -> m SessionState
+    , sessionHandlerLoad :: T.Time -> Maybe B.ByteString -> m SessionState
+    , sessionHandlerSave :: T.Time -> SessionState -> m ()
+    , sessionHandlerDestroy :: B.ByteString -> m ()
+    } deriving (Typeable)

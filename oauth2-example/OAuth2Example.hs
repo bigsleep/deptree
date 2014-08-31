@@ -34,7 +34,8 @@ import Wf.Web.Authenticate.OAuth2 (OAuth2(..), OAuth2Error(..))
 import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
 import Wf.Network.Http.Response (setStatus, addHeader, setHeaders, redirect, setBody, file, json)
 import Wf.Network.Wai (toWaiResponse, toWaiApplication)
-import Wf.Web.Session (Session, sget, sput, sdestroy, renderSetCookie, runSession, SessionState, defaultSessionState, SessionKvs, SessionSettings(sessionName), getRequestSessionId)
+import Wf.Web.Session (Session, sget, sput, sdestroy, renderSetCookie, SessionState, defaultSessionState, SessionKvs, SessionSettings(sessionName), getRequestSessionId)
+import Wf.Control.Eff.Run.Session.Kvs (runSessionKvs)
 import Wf.Web.Api (apiRoutes, getApi, postApi)
 import Wf.Application.Time (Time, getCurrentTime)
 import Wf.Application.Exception (Exception, throwException)
@@ -156,7 +157,7 @@ run oauth2 redis manager sessionSettings app request = do
         . runLoggerStdIO DEBUG
         . evalState defaultSessionState
         . runKvsRedis redis
-        . runSession sessionSettings t requestSessionId
+        . runSessionKvs sessionSettings t requestSessionId
         . runHttpClient manager
         . runAuthenticateOAuth2 oauth2
         . app

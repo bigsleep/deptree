@@ -19,6 +19,7 @@
     "session": {
         "sessionName": "SID",
         "sessionIsSecure": false,
-        "sessionTtl" : 120
+        "sessionTtl" : 120,
+        "sessionIdLength" : 40
     }
 }
