@@ -92,22 +92,27 @@ newSession
     -> Eff r SessionState
 newSession sstore@(SessionStore tv) sessionSettings current = do
     sid <- lift $ genSessionId sname current (fromInteger len)
+    retryIfDuplicate =<< tryNewSession sid
 
-    duplicate <- lift . atomically . fmap (HM.member sid) $ readTVar tv
-    if duplicate
-        then newSession sstore sessionSettings current
-        else do
-             let start = current
-             let end = T.addSeconds start ttl
-             let sd = defaultSessionData { sessionStartDate = start, sessionExpireDate = end }
-             logInfo $ [s|new session. sessionId=%s|] sid
-             lift . atomically . modifyTVar' tv $ HM.insert sid sd
-             return $ SessionState sid sd isSecure
     where
     sname = sessionName sessionSettings
     len = sessionIdLength sessionSettings
     ttl = sessionTtl sessionSettings
     isSecure = sessionIsSecure sessionSettings
+    end = T.addSeconds current ttl
+    sd = defaultSessionData { sessionStartDate = current, sessionExpireDate = end }
+
+    tryNewSession sid = lift . atomically $ do
+        duplicate <- HM.member sid <$> readTVar tv
+        if duplicate
+            then return Nothing
+            else return . Just $ SessionState sid sd isSecure
+
+    retryIfDuplicate Nothing = newSession sstore sessionSettings current
+
+    retryIfDuplicate (Just ss) = do
+        logInfo $ [s|new session. sessionId=%s|] (sessionId ss)
+        return ss
 
 
 
