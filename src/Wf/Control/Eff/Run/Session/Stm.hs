@@ -2,6 +2,7 @@
 module Wf.Control.Eff.Run.Session.Stm
 ( initializeSessionStore
 , runSessionStm
+, SessionStore
 ) where
 
 import qualified Data.ByteString as B (ByteString)
@@ -26,15 +27,10 @@ import Text.Printf.TH (s)
 
 data SessionStore = SessionStore (TVar (HM.HashMap B.ByteString SessionData))
 
-initializeSessionStore
-    ::
-    ( Member Logger r
-    , SetMember Lift (Lift IO) r
-    )
-    => Integer -> Eff r SessionStore
+initializeSessionStore :: Integer -> IO SessionStore
 initializeSessionStore gcInterval = do
-    tv <- lift . atomically . newTVar $ HM.empty
-    void . lift . forkIO $ forever (gc tv)
+    tv <- atomically . newTVar $ HM.empty
+    void . forkIO $ forever (gc tv)
     return (SessionStore tv)
     where
     gc tv = do

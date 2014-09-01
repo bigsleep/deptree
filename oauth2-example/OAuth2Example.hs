@@ -25,17 +25,15 @@ import qualified Network.HTTP.Client.TLS as N (tlsManagerSettings)
 import qualified Network.HTTP.Types as HTTP (Method, hContentType, hContentLength, status500)
 import qualified Network.Wai.Handler.Warp as Warp (run)
 
-import Wf.Control.Eff.Kvs (Kvs)
 import Wf.Control.Eff.HttpClient (HttpClient, httpClient, runHttpClient)
 import Wf.Control.Eff.Authenticate (Authenticate, AuthenticationType(..), authenticate, authenticationTransfer)
 import Wf.Control.Eff.Run.Authenticate.OAuth2 (runAuthenticateOAuth2)
-import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
 import Wf.Web.Authenticate.OAuth2 (OAuth2(..), OAuth2Error(..))
 import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
 import Wf.Network.Http.Response (setStatus, addHeader, setHeaders, redirect, setBody, file, json)
 import Wf.Network.Wai (toWaiResponse, toWaiApplication)
-import Wf.Web.Session (Session, sget, sput, sdestroy, renderSetCookie, SessionState, defaultSessionState, SessionKvs, SessionSettings(sessionName), getRequestSessionId)
-import Wf.Control.Eff.Run.Session.Kvs (runSessionKvs)
+import Wf.Web.Session (Session, sget, sput, sdestroy, renderSetCookie, SessionState, defaultSessionState, SessionSettings(sessionName), getRequestSessionId)
+import Wf.Control.Eff.Run.Session.Stm (SessionStore, initializeSessionStore, runSessionStm)
 import Wf.Web.Api (apiRoutes, getApi, postApi)
 import Wf.Application.Time (Time, getCurrentTime)
 import Wf.Application.Exception (Exception, throwException)
@@ -66,12 +64,12 @@ main :: IO ()
 main = do
     settings <- loadSettings
     manager <- N.newManager N.tlsManagerSettings
+    sessionStore <- initializeSessionStore (2 *60 * 1000000)
 
     let oauth2 = OAuth2 { oauth2Config = settingsOAuth2 settings, oauth2UserParser = fmap unGoogleUser . DA.decode }
         port = settingsPort settings
-        redis = settingsRedis settings
         sessionSettings = settingsSession settings
-        server = toWaiApplication $ run oauth2 redis manager sessionSettings routes
+        server = toWaiApplication $ run oauth2 manager sessionStore sessionSettings routes
 
     Warp.run port server
 
@@ -88,7 +86,6 @@ type M = Eff
     (  Authenticate ()
     :> HttpClient
     :> Session
-    :> Kvs SessionKvs
     :> State SessionState
     :> Logger
     :> Exception
@@ -139,13 +136,13 @@ oauth2CallbackApp req = do
 
 
 run :: OAuth2 User
-    -> Redis.ConnectInfo
     -> N.Manager
+    -> SessionStore
     -> SessionSettings
     -> (Request L.ByteString -> M Wai.Response)
     -> Request L.ByteString
     -> IO Wai.Response
-run oauth2 redis manager sessionSettings app request = do
+run oauth2 manager sessionStore sessionSettings app request = do
     t <- getCurrentTime
     run' t request
 
@@ -156,8 +153,7 @@ run oauth2 redis manager sessionSettings app request = do
         . runExc
         . runLoggerStdIO DEBUG
         . evalState defaultSessionState
-        . runKvsRedis redis
-        . runSessionKvs sessionSettings t requestSessionId
+        . runSessionStm sessionStore sessionSettings t requestSessionId
         . runHttpClient manager
         . runAuthenticateOAuth2 oauth2
         . app
