@@ -68,8 +68,9 @@ main = do
 
     let oauth2 = OAuth2 { oauth2Config = settingsOAuth2 settings, oauth2UserParser = fmap unGoogleUser . DA.decode }
         port = settingsPort settings
+        uri = settingsUri settings
         sessionSettings = settingsSession settings
-        server = toWaiApplication $ run oauth2 manager sessionStore sessionSettings routes
+        server = toWaiApplication $ run oauth2 manager sessionStore sessionSettings (routes uri)
 
     Warp.run port server
 
@@ -92,12 +93,12 @@ type M = Eff
     :> Lift IO
     :> ())
 
-routes :: Request L.ByteString -> M Wai.Response
-routes request = apiRoutes rootApp rs request method path
+routes :: B.ByteString -> Request L.ByteString -> M Wai.Response
+routes uri request = apiRoutes rootApp rs request method path
     where
     rs = [ getApi "/" (const rootApp)
          , postApi "/login" (const loginApp)
-         , getApi "/oauth2callback" oauth2CallbackApp
+         , getApi "/oauth2callback" (oauth2CallbackApp uri)
          ]
     method = requestMethod request
     path = requestRawPath request
@@ -117,22 +118,22 @@ rootApp = do
 loginApp :: M Wai.Response
 loginApp = fmap toWaiResponse $ authenticationTransfer () $ defaultResponse ()
 
-oauth2CallbackApp :: Request L.ByteString -> M Wai.Response
-oauth2CallbackApp req = do
+oauth2CallbackApp :: B.ByteString -> Request L.ByteString -> M Wai.Response
+oauth2CallbackApp uri req = do
     let maybeCode = id =<< (List.lookup "code" . requestQuery $ req)
     maybeState <- sget "state"
 
     logDebug $ "state code " ++ show (maybeState, maybeCode)
     user <- case (maybeState, maybeCode) of
                  (Just state, Just code) -> authenticate () (code, state)
-                 _ -> throwException $ redirect "http://localhost:3000/login" $ defaultResponse ()
+                 _ -> throwException $ redirect (uri `B.append` "/login") $ defaultResponse ()
 
     logDebug $ "loginUser: " ++ show user
 
     sdestroy
     sput "login_user" user
     setCookie <- renderSetCookie
-    return . toWaiResponse . redirect "http://localhost:3000/" . addHeader setCookie $ defaultResponse ()
+    return . toWaiResponse . redirect uri . addHeader setCookie $ defaultResponse ()
 
 
 run :: OAuth2 User

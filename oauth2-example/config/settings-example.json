@@ -1,5 +1,6 @@
 {
     "port": 3000,
+    "uri": "http://localhost:3000",
     "oauth2": {
         "oauth2AuthorizationServerName" : "google",
         "oauth2AuthorizationUri" : "https://accounts.google.com/o/oauth2/auth",
