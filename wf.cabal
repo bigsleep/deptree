@@ -29,7 +29,9 @@ library
                         Wf.Network.Http.Types,
                         Wf.Network.Http.Request,
                         Wf.Network.Http.Response,
-                        Wf.Web.Api, Wf.Web.Routing,
+                        Wf.Network.Wai,
+                        Wf.Web.Api,
+                        Wf.Web.Routing,
                         Wf.Web.Session,
                         Wf.Web.Session.Types,
                         Wf.Web.Authenticate.OAuth2,
@@ -147,3 +149,23 @@ executable oauth2-example
                         warp,
                         wf
   default-language:     Haskell2010
+
+executable example2
+  hs-source-dirs:       example2
+  main-is:              DepTree.hs
+  build-depends:        base >=4.7 && <4.8,
+                        extensible-effects >=1.4 && <1.5,
+                        Cabal >=1.6.0.1 && <1.21,
+                        unordered-containers >=0.2 && <0.3,
+                        bytestring >=0.10 && <0.11,
+                        text >=1.1 && <1.2,
+                        aeson >=0.6 && <0.7,
+                        http-client >=0.3 && <0.4,
+                        http-types >=0.8 && <0.9,
+                        reflection,
+                        graphviz,
+                        stm,
+                        warp,
+                        wf
+  default-language:     Haskell2010
+
