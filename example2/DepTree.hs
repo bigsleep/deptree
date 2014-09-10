@@ -20,10 +20,10 @@ import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (unpack)
-import qualified Data.ByteString.Lazy as L (ByteString, length, putStr)
+import qualified Data.ByteString.Lazy as L (ByteString, length, putStr, append, concat, readFile)
 import qualified Data.ByteString.Lazy.Char8 as L (pack, unpack)
 import qualified Data.Text.Lazy.Encoding as T (encodeUtf8)
-import qualified Data.HashMap.Strict as HM (HashMap, fromList, lookup, empty, member)
+import qualified Data.HashMap.Strict as HM (HashMap, fromList, lookup, empty, member, keys)
 import qualified Data.Aeson as DA (decode)
 import qualified Data.Aeson.TH as DA (deriveJSON, defaultOptions)
 import Data.Reflection (Given, give, given)
@@ -36,9 +36,10 @@ import Wf.Control.Eff.HttpClient (HttpClient, httpClient, runHttpClient)
 import Wf.Application.Exception (Exception, throwException)
 import Wf.Application.Logger (Logger, logDebug, runLoggerStdIO, LogLevel(..))
 import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
-import Wf.Network.Http.Response (setStatus, setContentType, setContentLength)
+import Wf.Network.Http.Response (setStatus, setContentType, setContentLength, html)
 import Wf.Web.Api (apiRoutes, getApi, postApi, ApiInfo(..))
 import Wf.Network.Wai (toWaiResponse, toWaiApplication)
+import Settings (Settings(..))
 
 
 
@@ -46,18 +47,31 @@ main :: IO ()
 main = do
     tv <- atomically $ newTVar HM.empty
     manager <- N.newManager N.defaultManagerSettings
-    forkIO $ worker 1440 manager tv
-    Warp.run 3000 . toWaiApplication . run manager $ routes tv
+    settings <- loadSettings
+    let interval = settingsIntervalMinutes settings
+        port = settingsPort settings
+    forkIO $ worker interval manager tv
+    Warp.run port . toWaiApplication . run manager $ routes tv
 
+    where
+    loadSettings :: IO Settings
+    loadSettings = do
+        a <- fmap DA.decode . L.readFile $ "example2/config/settings.json"
+        case a of
+             Just settings -> return settings
+             Nothing -> error "load failure"
 
 
 
 worker :: Int -> N.Manager -> TVar (HM.HashMap String [String]) -> IO ()
-worker sleepMinutes manager tv = forever $ routine
+worker sleepMinutes manager tv = do
+    updatePackageLibraryDependencies manager tv
+    routine
     where
     routine = do
-        updatePackageLibraryDependencies manager tv
         replicateM_ sleepMinutes $ threadDelay 60000000
+        forkIO routine
+        updatePackageLibraryDependencies manager tv
 
 
 
@@ -71,13 +85,26 @@ type M = Eff
 routes :: TVar (HM.HashMap String [String]) -> Request () -> M (Response L.ByteString)
 routes tv request = apiRoutes notFound rs request method path
     where
-    rs = [ getApi "/:package" (const $ depTreeApp tv)
+    rs = [ getApi "/" (const $ rootApp tv)
+         , getApi "/:package" (const $ depTreeApp tv)
          ]
     method = requestMethod request
     path = requestRawPath request
 
 notFound :: (Monad m) => m (Response L.ByteString)
 notFound = return . setStatus HTTP.status404 . defaultResponse $ ""
+
+
+rootApp :: TVar (HM.HashMap String [String]) -> M (Response L.ByteString)
+rootApp tv = do
+    packages <- fmap HM.keys . lift . atomically . readTVar $ tv
+    let links = L.concat . map (makeLink . L.pack) $ packages
+        body = "<!DOCTYPE html>\n<meta charset=\"utf-8\">\n<title>DepTree</title>\n<h1>DepTree</h1>\n" `L.append` links
+    return . html body $ defaultResponse ()
+
+    where
+    makeLink name = "<a href=\"" `L.append` name `L.append` "\">" `L.append` name `L.append` "</a>&nbsp;"
+
 
 depTreeApp :: (Given ApiInfo) => TVar (HM.HashMap String [String]) -> M (Response L.ByteString)
 depTreeApp tv = do
@@ -168,7 +195,7 @@ getPackageLibraryDependencies
     :: (Member HttpClient r, Member Exception r, SetMember Lift (Lift IO) r)
     => Eff r (HM.HashMap String [String])
 getPackageLibraryDependencies =
-    fmap HM.fromList $ mapM (nameAndDeps) =<< getPackageNames
+    fmap HM.fromList $ mapM (nameAndDeps) . take 10 =<< getPackageNames
     where
     nameAndDeps name = do
         ds <- getLibraryDependencies name
