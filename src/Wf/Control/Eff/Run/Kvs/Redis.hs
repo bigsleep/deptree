@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, FlexibleContexts, TypeFamilies, QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings, TypeOperators, FlexibleContexts, TypeFamilies, QuasiQuotes #-}
 module Wf.Control.Eff.Run.Kvs.Redis
 ( runKvsRedis
 ) where
@@ -7,7 +7,7 @@ import Control.Eff (Eff, VE(..), (:>), Member, SetMember, admin, handleRelay)
 import Control.Eff.Lift (Lift, lift)
 import qualified Wf.Control.Eff.Kvs as Kvs (Kvs(..), KeyType)
 
-import qualified Database.Redis as Redis (get, set, setex, del, exists, ttl, ConnectInfo, connect, runRedis, Status(..))
+import qualified Database.Redis as Redis (get, set, setex, del, exists, ttl, keys, ConnectInfo, connect, runRedis, Status(..))
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Lazy as L (toStrict, fromStrict)
 import Data.Typeable (Typeable)
@@ -86,3 +86,11 @@ runKvsRedis cinfo eff = do
                   handleResult (Left x) = do
                     logError $ [s|redis ttl failure. key=%s reply=%s|] k (show x)
                     throwException $ KvsError "ttl failure."
+
+          handle cn (Kvs.Keys _ c) = handleRedis cn (Redis.keys "*") handleResult
+            where handleResult (Right x) = loop cn . c $ x
+
+                  handleResult (Left x) = do
+                    logError $ [s|redis get failure. reply=%s|] (show x)
+                    throwException $ KvsError "redis get failure."
+

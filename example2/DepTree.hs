@@ -3,8 +3,7 @@ import Control.Eff ((:>), Eff, Member, SetMember)
 import Control.Eff.Exception (runExc)
 import Control.Eff.Lift (Lift, lift, runLift)
 import Control.Concurrent (threadDelay, forkIO)
-import Control.Concurrent.STM (TVar, newTVar, readTVar, writeTVar, atomically)
-import Control.Monad (forever, replicateM_)
+import Control.Monad (forever, replicateM_, mapM, mapM_)
 import qualified Control.Exception (Exception, SomeException(..))
 
 import Distribution.Package (PackageName(..), Dependency(..))
@@ -19,14 +18,15 @@ import qualified Data.List as L (lookup)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
-import qualified Data.ByteString.Char8 as B (unpack)
-import qualified Data.ByteString.Lazy as L (ByteString, length, putStr, append, concat, readFile)
+import qualified Data.ByteString.Char8 as B (pack, unpack)
+import qualified Data.ByteString.Lazy as L (ByteString, length, putStr, append, concat, readFile, fromStrict)
 import qualified Data.ByteString.Lazy.Char8 as L (pack, unpack)
 import qualified Data.Text.Lazy.Encoding as T (encodeUtf8)
-import qualified Data.HashMap.Strict as HM (HashMap, fromList, lookup, empty, member, keys)
-import qualified Data.Aeson as DA (decode)
+import qualified Data.HashMap.Strict as HM (HashMap, fromList, lookup, empty, member)
+import qualified Data.Aeson as DA (decode, encode)
 import qualified Data.Aeson.TH as DA (deriveJSON, defaultOptions)
 import Data.Reflection (Given, give, given)
+import qualified Database.Redis as Redis (ConnectInfo(..))
 
 import qualified Network.HTTP.Types as HTTP (methodGet, hAccept, status404, status500)
 import qualified Network.HTTP.Client as N (Request(..), Response(..), Manager, parseUrl, newManager, defaultManagerSettings)
@@ -35,23 +35,26 @@ import qualified Network.Wai.Handler.Warp as Warp (run)
 import Wf.Control.Eff.HttpClient (HttpClient, httpClient, runHttpClient)
 import Wf.Application.Exception (Exception, throwException)
 import Wf.Application.Logger (Logger, logDebug, runLoggerStdIO, LogLevel(..))
+import Wf.Application.Kvs (Kvs)
+import qualified Wf.Application.Kvs as Kvs (get, set, exists, keys)
 import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
 import Wf.Network.Http.Response (setStatus, setContentType, setContentLength, html)
 import Wf.Web.Api (apiRoutes, getApi, postApi, ApiInfo(..))
 import Wf.Network.Wai (toWaiResponse, toWaiApplication)
+import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
 import Settings (Settings(..))
 
 
 
 main :: IO ()
 main = do
-    tv <- atomically $ newTVar HM.empty
     manager <- N.newManager N.defaultManagerSettings
     settings <- loadSettings
     let interval = settingsIntervalMinutes settings
         port = settingsPort settings
-    forkIO $ worker interval manager tv
-    Warp.run port . toWaiApplication . run manager $ routes tv
+        redis = settingsRedis settings
+    forkIO $ worker interval manager redis
+    Warp.run port . toWaiApplication . run manager redis $ routes
 
     where
     loadSettings :: IO Settings
@@ -63,30 +66,33 @@ main = do
 
 
 
-worker :: Int -> N.Manager -> TVar (HM.HashMap String [String]) -> IO ()
-worker sleepMinutes manager tv = do
-    updatePackageLibraryDependencies manager tv
+worker :: Int -> N.Manager -> Redis.ConnectInfo -> IO ()
+worker sleepMinutes manager redis = do
+    update
     routine
     where
     routine = do
         replicateM_ sleepMinutes $ threadDelay 60000000
         forkIO routine
-        updatePackageLibraryDependencies manager tv
+        update
+        return ()
+    update = runLift . runExc . runLoggerStdIO DEBUG . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
 
 
 
 type M = Eff
     (  HttpClient
+    :> Kvs
     :> Logger
     :> Exception
     :> Lift IO
     :> ())
 
-routes :: TVar (HM.HashMap String [String]) -> Request () -> M (Response L.ByteString)
-routes tv request = apiRoutes notFound rs request method path
+routes :: Request () -> M (Response L.ByteString)
+routes request = apiRoutes notFound rs request method path
     where
-    rs = [ getApi "/" (const $ rootApp tv)
-         , getApi "/:package" (const $ depTreeApp tv)
+    rs = [ getApi "/" (const rootApp)
+         , getApi "/:package" (const depTreeApp)
          ]
     method = requestMethod request
     path = requestRawPath request
@@ -95,9 +101,9 @@ notFound :: (Monad m) => m (Response L.ByteString)
 notFound = return . setStatus HTTP.status404 . defaultResponse $ ""
 
 
-rootApp :: TVar (HM.HashMap String [String]) -> M (Response L.ByteString)
-rootApp tv = do
-    packages <- fmap HM.keys . lift . atomically . readTVar $ tv
+rootApp :: M (Response L.ByteString)
+rootApp = do
+    packages <- getPackageNames
     let links = L.concat . map (makeLink . L.pack) $ packages
         body = "<!DOCTYPE html>\n<meta charset=\"utf-8\">\n<title>DepTree</title>\n<h1>DepTree</h1>\n" `L.append` links
     return . html body $ defaultResponse ()
@@ -106,21 +112,21 @@ rootApp tv = do
     makeLink name = "<a href=\"" `L.append` name `L.append` "\">" `L.append` name `L.append` "</a>&nbsp;"
 
 
-depTreeApp :: (Given ApiInfo) => TVar (HM.HashMap String [String]) -> M (Response L.ByteString)
-depTreeApp tv = do
+depTreeApp :: (Given ApiInfo) => M (Response L.ByteString)
+depTreeApp = do
     package <- getUrlParam "package"
     lift $ print package
-    maybeTree <- depTree . B.unpack $ package
+    maybeTree <- depTree package
     case maybeTree of
         Just tree -> do
             body <- lift . toSvg $ tree
             return . setContentType "image/svg+xml" . setContentLength (fromIntegral $ L.length body) $ defaultResponse body
         Nothing -> notFound
     where
-    depTree name = lift . atomically $ do
-        hs <- readTVar tv
-        if HM.member name hs
-            then return . Just $ createDepTree hs [] name
+    depTree name = do
+        exists <- Kvs.exists name
+        if exists
+            then return . Just =<< createDepTree [] (B.unpack name)
             else return Nothing
     throwError s = throwException . Error $ s
     params = apiInfoParameters given
@@ -131,15 +137,17 @@ depTreeApp tv = do
 
 
 run :: N.Manager
+    -> Redis.ConnectInfo
     -> (Request () -> M (Response L.ByteString))
     -> Request ()
     -> IO (Response L.ByteString)
-run manager app = run'
+run manager redis app = run'
     where
     run' = runLift
         . (>>= handleError)
         . runExc
         . runLoggerStdIO DEBUG
+        . runKvsRedis redis
         . runHttpClient manager
         . app
     internalError = setStatus HTTP.status500 . defaultResponse $ ""
@@ -147,16 +155,6 @@ run manager app = run'
         lift $ print e
         return internalError
     handleError (Right r) = return r
-
-
-
-updatePackageLibraryDependencies :: N.Manager -> TVar (HM.HashMap String [String]) -> IO ()
-updatePackageLibraryDependencies manager tv = do
-    r <- runLift . runExc . runHttpClient manager $ (getPackageLibraryDependencies :: Eff (HttpClient :> Exception :> Lift IO :> ()) (HM.HashMap String [String]))
-    handleResult r
-    where
-    handleResult (Right a) = atomically . writeTVar tv $ a
-    handleResult _ = threadDelay 100000000 >> updatePackageLibraryDependencies manager tv
 
 
 
@@ -191,23 +189,23 @@ getLibraryDependencies package = do
     pkName (Dependency (PackageName name) _) = name
 
 
-getPackageLibraryDependencies
-    :: (Member HttpClient r, Member Exception r, SetMember Lift (Lift IO) r)
-    => Eff r (HM.HashMap String [String])
-getPackageLibraryDependencies =
-    fmap HM.fromList $ mapM (nameAndDeps) . take 10 =<< getPackageNames
+updatePackageLibraryDependencies
+    :: (Member HttpClient r, Member Kvs r, Member Exception r, SetMember Lift (Lift IO) r)
+    => Eff r ()
+updatePackageLibraryDependencies =
+    mapM_ nameAndDeps =<< getPackageNames
     where
     nameAndDeps name = do
         ds <- getLibraryDependencies name
         lift . putStrLn $ name
-        lift $ threadDelay 100000
-        return (name, ds)
+        Kvs.set (B.pack name) (DA.encode ds)
+        lift $ threadDelay 500000
 
-createDepTree :: HM.HashMap String [String] -> [String] -> String -> Tree String
-createDepTree deps ancestors name
-    | elem name ancestors = Tree name []
-    | otherwise = Tree name $ map (createDepTree  deps (name : ancestors)) childNames
-    where childNames = fromMaybe [] $ HM.lookup name deps
+createDepTree :: (Member Kvs r) => [String] -> String -> Eff r (Tree String)
+createDepTree ancestors name
+    | elem name ancestors = return $ Tree name []
+    | otherwise = return . Tree name =<< mapM (createDepTree (name : ancestors)) =<< childNames
+    where childNames = fmap (maybe [] (fromMaybe [] . DA.decode)) . Kvs.get . B.pack $ name
 
 toGraphviz :: Tree String -> DotGraph String
 toGraphviz tree = DotGraph

@@ -9,10 +9,11 @@ module Wf.Application.Kvs
 , delete
 , exists
 , ttl
+, keys
 ) where
 
 import Control.Eff (Eff, Member)
-import qualified Wf.Control.Eff.Kvs (get, set, setWithTtl, delete, exists, ttl, Kvs, KeyType)
+import qualified Wf.Control.Eff.Kvs (get, set, setWithTtl, delete, exists, ttl, keys, Kvs, KeyType)
 
 import Control.Exception (Exception)
 
@@ -50,3 +51,7 @@ exists = Wf.Control.Eff.Kvs.exists DefaultKvs
 
 ttl :: (Member Kvs r) => B.ByteString -> Eff r (Maybe Integer)
 ttl = Wf.Control.Eff.Kvs.ttl DefaultKvs
+
+keys :: (Member Kvs r) => Eff r [B.ByteString]
+keys = Wf.Control.Eff.Kvs.keys DefaultKvs
+

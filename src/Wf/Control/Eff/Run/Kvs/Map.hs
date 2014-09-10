@@ -7,7 +7,7 @@ import Control.Eff (Eff, VE(..), (:>), Member, admin, handleRelay)
 import Control.Eff.State.Strict (State, get, modify)
 import qualified Wf.Control.Eff.Kvs as Kvs (Kvs(..), KeyType)
 
-import qualified Data.Map as M (Map, lookup, insert, delete, member)
+import qualified Data.Map as M (Map, lookup, insert, delete, member, keys)
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Lazy as L (ByteString)
 import Wf.Data.Serializable (serialize, deserialize)
@@ -37,3 +37,7 @@ runKvsMap = loop . admin
             loop . c $ M.member k (m :: M.Map B.ByteString L.ByteString)
 
           handle (Kvs.Ttl _ _ c) = loop . c $ Nothing
+
+          handle (Kvs.Keys _ c) = do
+            m <- get
+            loop . c $ M.keys (m :: M.Map B.ByteString L.ByteString)
