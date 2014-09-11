@@ -1,9 +1,9 @@
-{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, DeriveDataTypeable, TemplateHaskell #-}
+{-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, FlexibleInstances, DeriveDataTypeable, TemplateHaskell #-}
 import Control.Eff ((:>), Eff, Member, SetMember)
 import Control.Eff.Exception (runExc)
 import Control.Eff.Lift (Lift, lift, runLift)
 import Control.Concurrent (threadDelay, forkIO)
-import Control.Monad (forever, replicateM_, mapM, mapM_)
+import Control.Monad (forever, replicateM_, mapM, mapM_, foldM)
 import qualified Control.Exception (Exception, SomeException(..))
 
 import Distribution.Package (PackageName(..), Dependency(..))
@@ -14,7 +14,7 @@ import Data.GraphViz (DotGraph(..), DotStatements(..), DotNode(..), DotEdge(..))
 import Data.GraphViz.Commands (GraphvizCommand(Dot), GraphvizOutput(Svg), graphvizWithHandle)
 import Data.GraphViz.Commands.IO (hGetStrict)
 
-import qualified Data.List as L (lookup)
+import qualified Data.List as L (lookup, elem)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 import qualified Data.ByteString as B (ByteString)
@@ -42,6 +42,7 @@ import Wf.Network.Http.Response (setStatus, setContentType, setContentLength, ht
 import Wf.Web.Api (apiRoutes, getApi, postApi, ApiInfo(..))
 import Wf.Network.Wai (toWaiResponse, toWaiApplication)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
+import Wf.Data.Serializable (Serializable(..))
 import Settings (Settings(..))
 
 
@@ -118,15 +119,15 @@ depTreeApp = do
     lift $ print package
     maybeTree <- depTree package
     case maybeTree of
-        Just tree -> do
-            body <- lift . toSvg $ tree
+        Just (nodes, edges) -> do
+            body <- lift $ toSvg nodes edges
             return . setContentType "image/svg+xml" . setContentLength (fromIntegral $ L.length body) $ defaultResponse body
         Nothing -> notFound
     where
     depTree name = do
         exists <- Kvs.exists name
         if exists
-            then return . Just =<< createDepTree [] (B.unpack name)
+            then return . Just =<< pickNodesAndEdges ([], []) (B.unpack name)
             else return Nothing
     throwError s = throwException . Error $ s
     params = apiInfoParameters given
@@ -198,17 +199,20 @@ updatePackageLibraryDependencies =
     nameAndDeps name = do
         ds <- getLibraryDependencies name
         lift . putStrLn $ name
-        Kvs.set (B.pack name) (DA.encode ds)
+        Kvs.set (B.pack name) ds
         lift $ threadDelay 500000
 
-createDepTree :: (Member Kvs r) => [String] -> String -> Eff r (Tree String)
-createDepTree ancestors name
-    | elem name ancestors = return $ Tree name []
-    | otherwise = return . Tree name =<< mapM (createDepTree (name : ancestors)) =<< childNames
-    where childNames = fmap (maybe [] (fromMaybe [] . DA.decode)) . Kvs.get . B.pack $ name
+pickNodesAndEdges :: ([String], [(String, String)]) -> String -> M ([String], [(String, String)])
+pickNodesAndEdges (nodes, edges) cur
+    | L.elem cur nodes = return (nodes, edges)
+    | otherwise = do
+        ds <- fmap (fromMaybe []) $ Kvs.get (B.pack cur)
+        let nodes' = cur : nodes
+            edges' = map ((,) cur) ds ++ edges
+        foldM pickNodesAndEdges (nodes', edges') ds
 
-toGraphviz :: Tree String -> DotGraph String
-toGraphviz tree = DotGraph
+toGraphviz :: [String] -> [(String, String)] -> DotGraph String
+toGraphviz nodes edges = DotGraph
     { strictGraph = True
     , directedGraph = True
     , graphID = Nothing
@@ -216,27 +220,26 @@ toGraphviz tree = DotGraph
         DotStmts
         { attrStmts = []
         , subGraphs = []
-        , nodeStmts = nodes
-        , edgeStmts = edges
+        , nodeStmts = map toDotNode nodes
+        , edgeStmts = map toDotEdge edges
         }
     }
     where
-    nodes = listNodes tree
-    edges = listEdges tree
-    listNodes (Tree a as) = DotNode a [] : concatMap listNodes as
-    listEdges (Tree a as) = map (edge a) as ++ concatMap listEdges as
-    edge a (Tree b _) = DotEdge a b []
+    toDotNode a = DotNode a []
+    toDotEdge (a, b) = DotEdge a b []
 
-toSvg :: Tree String -> IO L.ByteString
-toSvg tree = fmap T.encodeUtf8 $ graphvizWithHandle Dot g Svg hGetStrict
+toSvg :: [String] -> [(String, String)] -> IO L.ByteString
+toSvg nodes edges = fmap T.encodeUtf8 $ graphvizWithHandle Dot g Svg hGetStrict
     where
-    g = toGraphviz tree
+    g = toGraphviz nodes edges
 
 data Error = Error String deriving (Eq, Show, Typeable)
 
 instance Control.Exception.Exception Error
 
-data Tree a = Tree a [Tree a] deriving (Eq, Show, Read)
+instance Serializable [String] where
+    serialize = DA.encode
+    deserialize = DA.decode
 
 data PackageName' = PackageName'
     { packageName :: String
