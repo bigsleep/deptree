@@ -77,7 +77,7 @@ worker sleepMinutes manager redis = do
         forkIO routine
         update
         return ()
-    update = runLift . runExc . runLoggerStdIO DEBUG . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
+    update = runLift . runExc . runLoggerStdIO WARNING . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
 
 
 
@@ -116,7 +116,6 @@ rootApp = do
 depTreeApp :: (Given ApiInfo) => M (Response L.ByteString)
 depTreeApp = do
     package <- getUrlParam "package"
-    lift $ print package
     maybeTree <- depTree package
     case maybeTree of
         Just (nodes, edges) -> do
@@ -147,7 +146,7 @@ run manager redis app = run'
     run' = runLift
         . (>>= handleError)
         . runExc
-        . runLoggerStdIO DEBUG
+        . runLoggerStdIO WORNING
         . runKvsRedis redis
         . runHttpClient manager
         . app

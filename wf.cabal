@@ -168,4 +168,6 @@ executable example2
                         warp,
                         wf
   default-language:     Haskell2010
+  GHC-options: -Wall -fno-warn-orphans -O
+
 
