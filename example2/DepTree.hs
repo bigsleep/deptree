@@ -3,7 +3,7 @@ import Control.Eff ((:>), Eff, Member, SetMember)
 import Control.Eff.Exception (runExc)
 import Control.Eff.Lift (Lift, lift, runLift)
 import Control.Concurrent (threadDelay, forkIO)
-import Control.Monad (forever, replicateM_, mapM, mapM_, foldM)
+import Control.Monad (forever, replicateM_, mapM, mapM_, foldM, void, when)
 import qualified Control.Exception (Exception, SomeException(..))
 
 import Distribution.Package (PackageName(..), Dependency(..))
@@ -126,7 +126,7 @@ depTreeApp = do
     depTree name = do
         exists <- Kvs.exists name
         if exists
-            then return . Just =<< pickNodesAndEdges ([], []) (B.unpack name)
+            then return . Just =<< pickNodesAndEdges True ([], []) (B.unpack name)
             else return Nothing
     throwError s = throwException . Error $ s
     params = apiInfoParameters given
@@ -189,26 +189,36 @@ getLibraryDependencies package = do
     pkName (Dependency (PackageName name) _) = name
 
 
-updatePackageLibraryDependencies
-    :: (Member HttpClient r, Member Kvs r, Member Exception r, SetMember Lift (Lift IO) r)
-    => Eff r ()
-updatePackageLibraryDependencies =
-    mapM_ nameAndDeps =<< getPackageNames
+updatePackageLibraryDependencies :: M ()
+updatePackageLibraryDependencies = do
+    names <- getPackageNames
+    mapM_ nameAndDeps names
+    mapM_ updateCache names
     where
     nameAndDeps name = do
         ds <- getLibraryDependencies name
         lift . putStrLn $ name
         Kvs.set (B.pack name) ds
         lift $ threadDelay 500000
+    updateCache name = pickNodesAndEdges False ([], []) name
 
-pickNodesAndEdges :: ([String], [(String, String)]) -> String -> M ([String], [(String, String)])
-pickNodesAndEdges (nodes, edges) cur
+pickNodesAndEdges :: Bool -> ([String], [(String, String)]) -> String -> M ([String], [(String, String)])
+pickNodesAndEdges useCache (nodes, edges) cur
     | L.elem cur nodes = return (nodes, edges)
     | otherwise = do
-        ds <- fmap (fromMaybe []) $ Kvs.get (B.pack cur)
-        let nodes' = cur : nodes
-            edges' = map ((,) cur) ds ++ edges
-        foldM pickNodesAndEdges (nodes', edges') ds
+        cache <- if useCache then Kvs.get (B.pack $ "cache:" ++ cur) else return Nothing
+        case cache of
+            Just a -> return a
+            _ -> do
+                ds <- fmap (fromMaybe []) $ Kvs.get (B.pack cur)
+                let nodes' = cur : nodes
+                    edges' = map ((,) cur) ds ++ edges
+                (n, e) <- foldM (pickNodesAndEdges useCache) (nodes', edges') ds
+                when (length n > 10) (cacheNodesAndEdges cur (n, e))
+                return (n, e)
+
+cacheNodesAndEdges :: String -> ([String], [(String, String)]) -> M ()
+cacheNodesAndEdges name a = void $ Kvs.set (B.pack $ "cache:" ++ name) a
 
 toGraphviz :: [String] -> [(String, String)] -> DotGraph String
 toGraphviz nodes edges = DotGraph
@@ -237,6 +247,10 @@ data Error = Error String deriving (Eq, Show, Typeable)
 instance Control.Exception.Exception Error
 
 instance Serializable [String] where
+    serialize = DA.encode
+    deserialize = DA.decode
+
+instance Serializable ([String], [(String, String)]) where
     serialize = DA.encode
     deserialize = DA.decode
 
