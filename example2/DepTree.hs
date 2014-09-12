@@ -1,9 +1,9 @@
 {-# LANGUAGE TypeOperators, OverloadedStrings, FlexibleContexts, FlexibleInstances, DeriveDataTypeable, TemplateHaskell #-}
-import Control.Eff ((:>), Eff, Member, SetMember)
+import Control.Eff ((:>), Eff, Member)
 import Control.Eff.Exception (runExc)
 import Control.Eff.Lift (Lift, lift, runLift)
 import Control.Concurrent (threadDelay, forkIO)
-import Control.Monad (forever, replicateM_, mapM, mapM_, foldM, void, when)
+import Control.Monad (replicateM_, foldM, void, when, unless)
 import qualified Control.Exception (Exception, SomeException(..))
 
 import Distribution.Package (PackageName(..), Dependency(..))
@@ -17,15 +17,13 @@ import Data.GraphViz.Commands.IO (hGetStrict)
 import qualified Data.List as L (lookup, elem)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
-import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (pack, unpack)
-import qualified Data.ByteString.Lazy as L (ByteString, length, putStr, append, concat, readFile, fromStrict)
+import qualified Data.ByteString.Lazy as L (ByteString, length, append, concat, readFile)
 import qualified Data.ByteString.Lazy.Char8 as L (pack, unpack)
 import qualified Data.Text.Lazy.Encoding as T (encodeUtf8)
-import qualified Data.HashMap.Strict as HM (HashMap, fromList, lookup, empty, member)
 import qualified Data.Aeson as DA (decode, encode)
 import qualified Data.Aeson.TH as DA (deriveJSON, defaultOptions)
-import Data.Reflection (Given, give, given)
+import Data.Reflection (Given, given)
 import qualified Database.Redis as Redis (ConnectInfo(..))
 
 import qualified Network.HTTP.Types as HTTP (methodGet, hAccept, status404, status500)
@@ -34,13 +32,13 @@ import qualified Network.Wai.Handler.Warp as Warp (run)
 
 import Wf.Control.Eff.HttpClient (HttpClient, httpClient, runHttpClient)
 import Wf.Application.Exception (Exception, throwException)
-import Wf.Application.Logger (Logger, logDebug, runLoggerStdIO, LogLevel(..))
+import Wf.Application.Logger (Logger, runLoggerStdIO, LogLevel(..))
 import Wf.Application.Kvs (Kvs)
-import qualified Wf.Application.Kvs as Kvs (get, set, exists, keys)
-import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath, requestHeaders, requestQuery)
+import qualified Wf.Application.Kvs as Kvs (get, set, exists)
+import Wf.Network.Http.Types (Request, Response, defaultResponse, requestMethod, requestRawPath)
 import Wf.Network.Http.Response (setStatus, setContentType, setContentLength, html)
-import Wf.Web.Api (apiRoutes, getApi, postApi, ApiInfo(..))
-import Wf.Network.Wai (toWaiResponse, toWaiApplication)
+import Wf.Web.Api (apiRoutes, getApi, ApiInfo(..))
+import Wf.Network.Wai (toWaiApplication)
 import Wf.Control.Eff.Run.Kvs.Redis (runKvsRedis)
 import Wf.Data.Serializable (Serializable(..))
 import Settings (Settings(..))
@@ -54,7 +52,7 @@ main = do
     let interval = settingsIntervalMinutes settings
         port = settingsPort settings
         redis = settingsRedis settings
-    forkIO $ worker interval manager redis
+    _ <- forkIO $ worker interval manager redis
     Warp.run port . toWaiApplication . run manager redis $ routes
 
     where
@@ -74,10 +72,10 @@ worker sleepMinutes manager redis = do
     where
     routine = do
         replicateM_ sleepMinutes $ threadDelay 60000000
-        forkIO routine
+        _ <- forkIO routine
         update
         return ()
-    update = runLift . runExc . runLoggerStdIO WARN . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
+    update = void . runLift . runExc . runLoggerStdIO WARN . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
 
 
 
@@ -116,23 +114,26 @@ rootApp = do
 depTreeApp :: (Given ApiInfo) => M (Response L.ByteString)
 depTreeApp = do
     package <- getUrlParam "package"
-    maybeTree <- depTree package
-    case maybeTree of
-        Just (nodes, edges) -> do
-            body <- lift $ toSvg nodes edges
-            return . setContentType "image/svg+xml" . setContentLength (fromIntegral $ L.length body) $ defaultResponse body
-        Nothing -> notFound
+    (n, e) <- depTree package
+    body <- lift $ toSvg n e
+    return . setContentType "image/svg+xml" . setContentLength (fromIntegral $ L.length body) $ defaultResponse body
+
     where
     depTree name = do
-        exists <- Kvs.exists name
-        if exists
-            then return . Just =<< pickNodesAndEdges True ([], []) (B.unpack name)
-            else return Nothing
+        let name' = B.unpack name
+        Kvs.exists name >>= flip unless (throwError "package not found")
+        cache <- Kvs.get . B.pack $ "cache:" ++ name'
+        case cache of
+            Just a -> return a
+            _ -> do
+                (n, e) <- pickNodesAndEdges True ([], [])  name'
+                when (length n > 10) $ cacheNodesAndEdges name' (n, e)
+                return (n, e)
     throwError s = throwException . Error $ s
     params = apiInfoParameters given
     getUrlParam a = case L.lookup a params of
         Just x -> return x
-        Nothing -> throwError $ "no url parameter"
+        Nothing -> throwError "no url parameter"
 
 
 
@@ -200,7 +201,8 @@ updatePackageLibraryDependencies = do
         lift . putStrLn $ name
         Kvs.set (B.pack name) ds
         lift $ threadDelay 500000
-    updateCache name = pickNodesAndEdges False ([], []) name
+    updateCache name = do
+        cacheNodesAndEdges name =<< pickNodesAndEdges False ([], []) name
 
 pickNodesAndEdges :: Bool -> ([String], [(String, String)]) -> String -> M ([String], [(String, String)])
 pickNodesAndEdges useCache (nodes, edges) cur
@@ -213,9 +215,7 @@ pickNodesAndEdges useCache (nodes, edges) cur
                 ds <- fmap (fromMaybe []) $ Kvs.get (B.pack cur)
                 let nodes' = cur : nodes
                     edges' = map ((,) cur) ds ++ edges
-                (n, e) <- foldM (pickNodesAndEdges useCache) (nodes', edges') ds
-                when (length n > 10) (cacheNodesAndEdges cur (n, e))
-                return (n, e)
+                foldM (pickNodesAndEdges useCache) (nodes', edges') ds
 
 cacheNodesAndEdges :: String -> ([String], [(String, String)]) -> M ()
 cacheNodesAndEdges name a = void $ Kvs.set (B.pack $ "cache:" ++ name) a
