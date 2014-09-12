@@ -77,7 +77,7 @@ worker sleepMinutes manager redis = do
         forkIO routine
         update
         return ()
-    update = runLift . runExc . runLoggerStdIO WARNING . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
+    update = runLift . runExc . runLoggerStdIO WARN . runKvsRedis redis . runHttpClient manager $ (updatePackageLibraryDependencies :: Eff (HttpClient :> Kvs :> Logger :> Exception :> Lift IO :> ()) ())
 
 
 
@@ -146,7 +146,7 @@ run manager redis app = run'
     run' = runLift
         . (>>= handleError)
         . runExc
-        . runLoggerStdIO WORNING
+        . runLoggerStdIO WARN
         . runKvsRedis redis
         . runHttpClient manager
         . app
