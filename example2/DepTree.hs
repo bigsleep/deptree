@@ -127,7 +127,7 @@ depTreeApp = do
             Just a -> return a
             _ -> do
                 (n, e) <- pickNodesAndEdges True ([], [])  name'
-                when (length n > 10) $ cacheNodesAndEdges name' (n, e)
+                cacheNodesAndEdges name' (n, e)
                 return (n, e)
     throwError s = throwException . Error $ s
     params = apiInfoParameters given
@@ -202,7 +202,8 @@ updatePackageLibraryDependencies = do
         Kvs.set (B.pack name) ds
         lift $ threadDelay 500000
     updateCache name = do
-        cacheNodesAndEdges name =<< pickNodesAndEdges False ([], []) name
+        (n, e) <- pickNodesAndEdges False ([], []) name
+        when (length n > 10) $ cacheNodesAndEdges name (n, e)
 
 pickNodesAndEdges :: Bool -> ([String], [(String, String)]) -> String -> M ([String], [(String, String)])
 pickNodesAndEdges useCache (nodes, edges) cur
@@ -210,7 +211,7 @@ pickNodesAndEdges useCache (nodes, edges) cur
     | otherwise = do
         cache <- if useCache then Kvs.get (B.pack $ "cache:" ++ cur) else return Nothing
         case cache of
-            Just a -> return a
+            Just (n, e) -> return (n ++ nodes, e ++ edges)
             _ -> do
                 ds <- fmap (fromMaybe []) $ Kvs.get (B.pack cur)
                 let nodes' = cur : nodes
