@@ -55,8 +55,8 @@ runUpdateWorker sleepMinutes root dtree = forever (update' >> sleep)
 update :: TVar L.ByteString -> TVar DepTree -> IO ()
 update root dtree = do
     putStrLn "update started"
-    download hackageUrl indexPath
-    throwIfFailure =<< system ("rm -r " ++ indexPath)
+    download hackageUrl tb
+    _ <- system ("rm -r " ++ indexPath)
     throwIfFailure =<< system ("mkdir " ++ indexPath)
     throwIfFailure =<< system ("tar xzf " ++ tb ++ " -C " ++ indexPath)
 
