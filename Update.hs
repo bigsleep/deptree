@@ -23,7 +23,7 @@ import qualified Data.ByteString.Char8 as B (pack)
 import qualified Data.ByteString.Lazy as L (ByteString, append, concat)
 import qualified Data.ByteString.Lazy.Char8 as L (pack, unpack)
 
-import Data.List ((\\), intercalate)
+import Data.List ((\\), intercalate, sort)
 import Data.Maybe (fromMaybe)
 import qualified Data.HashMap.Strict as HM (HashMap, fromList)
 
@@ -97,7 +97,7 @@ dependencies pname = do
 updateRootPage :: TVar L.ByteString -> [String] -> IO ()
 updateRootPage tv packageNames = atomically $ writeTVar tv body
     where
-    links = L.concat . map (makeLink . L.pack) $ packageNames
+    links = L.concat . map (makeLink . L.pack) . sort $ packageNames
     body = "<!DOCTYPE html>\n<meta charset=\"utf-8\">\n<title>DepTree</title>\n<h1>DepTree</h1>\n" `L.append` links
     makeLink name = "<a href=\"" `L.append` name `L.append` "\">" `L.append` name `L.append` "</a>&nbsp;"
 
