@@ -14,13 +14,14 @@ import Data.Reflection (Given, given)
 import qualified Data.List as List (lookup, elem, foldl')
 import qualified Data.ByteString as B (ByteString)
 import qualified Data.ByteString.Char8 as B (unpack)
-import qualified Data.ByteString.Lazy as L (ByteString, length)
-import qualified Data.Text.Lazy.Encoding as T (encodeUtf8)
+import qualified Data.ByteString.Lazy as L (ByteString, length, fromStrict)
+import qualified Data.Text.Lazy as TL (Text)
+import qualified Data.Text.Lazy.Encoding as TL (decodeUtf8, encodeUtf8)
 import qualified Data.HashMap.Strict as HM (lookup)
 import Data.Maybe (fromMaybe)
 import Data.Typeable (Typeable)
 
-import Data.GraphViz (DotGraph(..), DotStatements(..), DotNode(..), DotEdge(..))
+import Data.GraphViz (DotGraph(..), DotStatements(..), DotNode(..), DotEdge(..), GraphID(..))
 import Data.GraphViz.Commands (GraphvizCommand(Dot), GraphvizOutput(Svg), graphvizWithHandle)
 import Data.GraphViz.Commands.IO (hGetStrict)
 
@@ -40,7 +41,7 @@ depTreeApp
 depTreeApp tv _ = do
     package <- getUrlParam "package"
     (n, e) <- lift . atomically $ (readTVar tv >>= return . depTree package)
-    body <- lift $ toSvg n e
+    body <- lift $ toSvg package n e
     return . toWaiResponse . setContentType "image/svg+xml" . setContentLength (fromIntegral $ L.length body) $ defaultResponse body
 
     where
@@ -62,11 +63,11 @@ pickNodesAndEdges dtree (nodes, edges) cur
         edges' = map ((,) cur) ds ++ edges
 
 
-toGraphviz :: [String] -> [(String, String)] -> DotGraph String
-toGraphviz nodes edges = DotGraph
+toGraphviz :: TL.Text -> [String] -> [(String, String)] -> DotGraph String
+toGraphviz name nodes edges = DotGraph
     { strictGraph = True
     , directedGraph = True
-    , graphID = Nothing
+    , graphID = Just (Str name)
     , graphStatements =
         DotStmts
         { attrStmts = []
@@ -79,12 +80,13 @@ toGraphviz nodes edges = DotGraph
     toDotNode a = DotNode a []
     toDotEdge (a, b) = DotEdge a b []
 
-toSvg :: [B.ByteString] -> [(B.ByteString, B.ByteString)] -> IO L.ByteString
-toSvg nodes edges = fmap T.encodeUtf8 $ graphvizWithHandle Dot g Svg hGetStrict
+toSvg :: B.ByteString -> [B.ByteString] -> [(B.ByteString, B.ByteString)] -> IO L.ByteString
+toSvg name nodes edges = fmap TL.encodeUtf8 $ graphvizWithHandle Dot g Svg hGetStrict
     where
+    name' = TL.decodeUtf8 . L.fromStrict $ name
     nodes' = map B.unpack nodes
     edges' = map (\(a, b) -> (B.unpack a, B.unpack b)) edges
-    g = toGraphviz nodes' edges'
+    g = toGraphviz name' nodes' edges'
 
 
 data Error = Error String deriving (Eq, Show, Typeable)
