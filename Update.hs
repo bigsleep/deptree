@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Update
 ( runUpdateWorker
+, keepAlive
 , DepTree
 ) where
 
@@ -111,3 +112,13 @@ parseVersion = parse . break (== '.')
 
 showVersion :: [Int] -> String
 showVersion = intercalate "." . map show
+
+
+keepAlive :: Int -> String -> IO ()
+keepAlive sleepMinutes url = forever (wakeup >> sleep)
+    where
+    sleep = replicateM_ sleepMinutes $ threadDelay 6000000
+    wakeup = download url "tmp"
+              `catch` \(SomeException e) -> putStrLn ("wakeup failure: " ++ show e)
+
+

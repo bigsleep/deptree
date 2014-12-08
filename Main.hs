@@ -2,7 +2,7 @@
 module Main where
 
 import Root (rootApp)
-import Update (runUpdateWorker, DepTree)
+import Update (runUpdateWorker, keepAlive, DepTree)
 import Settings (Settings(..))
 import DepTree (depTreeApp)
 
@@ -34,11 +34,14 @@ main = do
     settings <- loadSettings
     let interval = settingsIntervalMinutes settings
         port = settingsPort settings
+        url = settingsUrl settings
 
     root <- atomically $ newTVar "<p>constructing</p>"
     dtree <- atomically $ newTVar HM.empty
 
     _ <- forkIO $ runUpdateWorker interval root dtree
+
+    _ <- forkIO $ keepAlive 20 url
 
     Warp.run port . toWaiApplication . run $ routes root dtree
 

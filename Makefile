@@ -14,5 +14,6 @@ build:
 
 run:
 	sed -i -e s/ENV_PORT/${PORT}/ ${setting_file}
+	sed -i -e s#ENV_URL#${DEPTREE_URL}# ${setting_file}
 	cat ${setting_file}
 	./dist/build/${project}/${project}

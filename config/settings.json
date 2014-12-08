@@ -1,4 +1,5 @@
 {
     "port": ENV_PORT,
+    "url": "ENV_URL",
     "interval": 60
 }
