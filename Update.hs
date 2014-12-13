@@ -46,9 +46,8 @@ indexPath = "index"
 
 
 runUpdateWorker :: Int -> TVar L.ByteString -> TVar DepTree -> IO ()
-runUpdateWorker sleepMinutes root dtree = forever (update' >> sleep)
+runUpdateWorker sleepMinutes root dtree = forever (update' >> sleep sleepMinutes)
     where
-    sleep = replicateM_ sleepMinutes $ threadDelay 6000000
     update' = update root dtree
               `catch` \(SomeException e) -> putStrLn ("update failure: " ++ show e)
 
@@ -115,10 +114,10 @@ showVersion = intercalate "." . map show
 
 
 keepAlive :: Int -> String -> IO ()
-keepAlive sleepMinutes url = forever (wakeup >> sleep)
+keepAlive sleepMinutes url = forever (wakeup >> sleep sleepMinutes)
     where
-    sleep = replicateM_ sleepMinutes $ threadDelay 6000000
     wakeup = download url "tmp"
               `catch` \(SomeException e) -> putStrLn ("wakeup failure: " ++ show e)
 
-
+sleep :: Int -> IO ()
+sleep sleepMinutes = replicateM_ sleepMinutes $ threadDelay 60000000
